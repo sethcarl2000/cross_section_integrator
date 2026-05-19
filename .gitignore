@@ -1,0 +1,9 @@
+# build files 
+build 
+
+# .txt files for processes (they are copied in the implementation files)
+*.txt
+
+# vscode files 
+.vscode
+
