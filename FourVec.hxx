@@ -21,7 +21,7 @@ struct FourVec {
     inline double norm()  const { return std::sqrt(norm2()); }
 };  
  
-FourVec Nudge(FourVec v, double x, double y, double z) {
+inline FourVec Nudge(FourVec v, double x, double y, double z) {
     double m2 = v.norm2(); 
     v[1] += x; v[2] += y; v[3] += z; 
     v[0] = std::sqrt( m2 + v[1]*v[1] + v[2]*v[2] + v[3]*v[3] );
@@ -47,13 +47,13 @@ inline FourVec operator-(const FourVec& lhs, const FourVec& rhs) {
 }
 
 
-std::string String(const FourVec& v) {
+inline std::string String(const FourVec& v) {
     char buff[50]; 
     std::sprintf(buff, "(% 5.1f, % 5.1f % 5.1f % 5.1f)", v.P[0], v.P[1],v.P[2],v.P[3]);
     return std::string{buff}; 
 }
 
-std::ostream& operator<<(std::ostream& os, const FourVec& v) {
+inline std::ostream& operator<<(std::ostream& os, const FourVec& v) {
     return os << String(v); 
 }
 

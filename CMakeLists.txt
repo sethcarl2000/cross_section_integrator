@@ -39,8 +39,9 @@ set(sources
 
 set(headers
     FourVec.hxx
-    cs_integrator.hxx
-    processes.hxx    
+    processes.hxx 
+    CrossSectionIntegrator.hxx   
+    argparse.hpp
 )
 
 #---------------------------------------------------------
@@ -58,14 +59,14 @@ set(headers
 add_executable(cs_integrator cs_integrator.cxx ${sources} ${headers})
 target_include_directories(cs_integrator PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
 target_link_libraries(cs_integrator PUBLIC ROOT::Core Threads::Threads)
-target_compile_options(cs_integrator PRIVATE -pthread -O3)
+target_compile_options(cs_integrator PRIVATE -pthread)
 
 # add threads & other args 
 find_package(Threads REQUIRED)
-target_link_libraries(measure_energy PUBLIC Threads::Threads)
+target_link_libraries(cs_integrator PUBLIC Threads::Threads)
 
-target_include_directories(measure_energy PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${ROOT_INCLUDE_DIRS})
-target_link_libraries(measure_energy PRIVATE ${ROOT_LIBRARIES})
+target_include_directories(cs_integrator PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${ROOT_INCLUDE_DIRS})
+target_link_libraries(cs_integrator PRIVATE ${ROOT_LIBRARIES})
 
 
 #---------------------------------------------------------

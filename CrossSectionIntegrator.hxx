@@ -10,6 +10,12 @@
 #include <limits> 
 #include "FourVec.hxx"
 
+namespace CSInteg {
+    
+    /// @return 'true' if arg is nan
+    template<typename T> inline bool is_nan(T x) { return x!=x; };
+}
+
 struct FourVecParameters {
     bool is_fixed; //if 'true', then it will not be integrated over
     FourVec val; //starting value 
@@ -27,18 +33,18 @@ namespace Setting {
 }
 
 //integrates a square matrix element over external momenta
-template<int D> double CrossSectionIntegrator(
-    std::function<double(const std::array<FourVec,D>&)> fcn, 
-    const std::array<FourVecParameters,D> momenta_inputs, 
+template<int D> long double CrossSectionIntegrator(
+    std::function<long double(const std::array<FourVec,D>&)> fcn, 
+    std::array<FourVecParameters,D> momenta_inputs, 
     long long int n_steps, 
     long long int steps_between_reports,
-    Setting::Bit mode = Setting::kConserveEnergy
+    const int mode = Setting::kConserveEnergy, 
+    long long int n_thermalization_steps = 0 //number of steps before measurements start
 )
 {       
-    const double kNaN = std::numeric_limits<double>::quiet_NaN(); 
+    using CSInteg::is_nan;
 
-    /// @return 'true' if arg is nan
-    auto is_nan = [](double x) { return x!=x; };
+    const double kNaN = std::numeric_limits<double>::quiet_NaN(); 
 
     //initialize random-number generators
     std::mt19937 twister; 
@@ -70,10 +76,11 @@ template<int D> double CrossSectionIntegrator(
     std::cout << " total momenta to integrate over: " << momenta_to_integrate.size() << std::endl; 
 
     //try to perform monte-carlo integration of variables    
-    long double amp_sum = 0.; 
+    long double amp_sum  = 0.; 
+    long double amp2_sum = 0.; 
 
     //get the starting value of the amplitude 
-    double amp = fcn(momenta);
+    long double amp = fcn(momenta);
 
     if (is_nan(amp) || amp < 0.) {
         std::cerr << "<"<<__func__<<">: Fatal error: ~~~~~~~~~~~~~~~~~~~~~~~~~~~\n"
@@ -91,6 +98,9 @@ template<int D> double CrossSectionIntegrator(
         return amp; 
     }
 
+    //multiply amplitude by integral measure
+    for (int i=0; i<D; i++) amp *= measure[i](momenta[i]);
+
     //return net energy of all momenta 
     auto get_net_energy = [](const std::array<FourVec,D>& v) {
         double E = 0.; 
@@ -105,12 +115,16 @@ template<int D> double CrossSectionIntegrator(
     long long int i_report=0; 
     long long int step_n_accepted=0.; 
     long double step_amp_sum=0.;  
+    long double step_amp2_sum=0.; 
 
-    for (long long int step=0; step<n_steps; step++) {
+    for (long long int step=-n_thermalization_steps; step<n_steps; step++) {
 
-        amp_sum += (long double)amp; 
+        if (step >= 0) {
+            amp_sum  += amp; 
+            amp2_sum += amp*amp;   
+        }
 
-        double new_amp = 1.; 
+        long double new_amp = 1.; 
 
         bool valid_update{false}; 
         
@@ -148,7 +162,9 @@ template<int D> double CrossSectionIntegrator(
         pi[3] *= p_mag/norm3; 
 
         //now, calculate the amplitude 
-        new_amp = fcn(new_momenta); 
+        new_amp = fcn(new_momenta);     
+        for (int i=0; i<D; i++) new_amp *= measure[i](momenta[i]);
+
 
         if (is_nan(new_amp)) continue; 
         
@@ -157,39 +173,64 @@ template<int D> double CrossSectionIntegrator(
             //std::printf(" accepted\n");
             amp = new_amp; 
             momenta = new_momenta; 
-            ++n_accepted;
+            if (step >=0 ) ++n_accepted;
             ++step_n_accepted; 
         } else {
             //std::printf(" rejected\n"); 
         }
         
-
-        
         if (++i_report >= steps_between_reports) {
+            
+            long double d_i_report = (long double)i_report; 
+            long double d_step     = (long double)step; 
+
+            //compute the variance of the amplitude 
+            long double step_rel_variance = (step_amp2_sum/d_i_report) - std::pow(step_amp_sum/d_i_report,2);
+            long double rel_variance      = (amp2_sum/d_step) - std::pow(amp_sum/d_step,2);
+
+            //get the relative variance
+            step_rel_variance   = std::sqrt(step_rel_variance); 
+            rel_variance        = std::sqrt(rel_variance);
+
+            //step acceptance prob. 
+            long double step_accept_p = ((long double)step_n_accepted)/d_i_report; 
+        
             printf(
                 "step %5lli/%5lli (%5.1f%%) ----------------------------------------------------\n"
-                "            total          step\n"
-                "   amp_sum: %-9.4e         %-9.4e\n"
-                "acceptance: %5.1f%%        %5.1f%%\n"   
+                "            total                           step\n"
+                "   amp_sum: %-10.4Le +/- %-8.2Le          %-10.4Le +/- %-8.2Le\n"
+                "acceptance: %-5.1Lf%%                       %-5.1Lf%%\n"   
                 "momenta: \n", 
                 step, n_steps, 100.*((double)step)/((double)n_steps),     
 
-                (double)amp_sum/((double)step),            (double)step_amp_sum/((double)i_report),
-                100.*((double)n_accepted)/((double)step),  100.*((double)step_n_accepted)/((double)i_report)
+                (long double)amp_sum/d_step,            rel_variance,         
+                (long double)step_amp_sum/d_i_report,   step_rel_variance,
+                (long double)100.*n_accepted/d_step,    (long double)100.*step_n_accepted/d_i_report
             );
             for (int i=0; i<D; i++) {
                 std::cout << " " << i << " " << momenta[i] << std::endl; 
             }
             i_report=0; 
             step_amp_sum=0;
+            step_amp2_sum=0; 
             step_n_accepted=0; 
+
+            //adjust the scan rate 
+            if (mode & Setting::kAutoAdjustScan) {
+                for (int ind : momenta_to_integrate) {
+                    auto& scan_amp = momenta_inputs[ind].momenta_scan_amplitude;
+                    scan_amp *= 1.  -  (0.5 - step_accept_p);
+                }
+            }
+
         } else {
-            step_amp_sum += amp; 
+            step_amp_sum  += amp; 
+            step_amp2_sum += amp*amp; 
         }
     
     }
     
-    return amp / ((double)n_steps);
+    return amp_sum / ((long double)n_steps);
 }
 
 
