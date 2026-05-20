@@ -26,9 +26,10 @@ struct FourVecParameters {
 namespace Setting {
     enum Bit : int {
         kNone = 0,
-        kConserveEnergy = 1 << 0, //enforce external energy conservation for each update
-        kConserveMomenta = 1 << 1, //enforce external momentum conservation for each update 
-        kAutoAdjustScan = 1 << 2, //automatically adjust the scan rate to keep the acceptance prob around ~50% 
+        kConserveEnergy     = 1 << 0, //enforce external energy conservation for each update
+        kConserveMomenta    = 1 << 1, //enforce external momentum conservation for each update 
+        kAutoAdjustScan     = 1 << 2, //automatically adjust the scan rate to keep the acceptance prob around ~50% 
+        kVerbose            = 1 << 3  //if true, then report output
     };
 }
 
@@ -38,7 +39,7 @@ template<int D> long double CrossSectionIntegrator(
     std::array<FourVecParameters,D> momenta_inputs, 
     long long int n_steps, 
     long long int steps_between_reports,
-    const int mode = Setting::kConserveEnergy, 
+    const int mode = Setting::kConserveEnergy | Setting::kVerbose, 
     long long int n_thermalization_steps = 0 //number of steps before measurements start
 )
 {       
@@ -73,7 +74,7 @@ template<int D> long double CrossSectionIntegrator(
         double m2 = inp.mass*inp.mass; 
         measure[i] = [m2](const FourVec& p){ return 1./std::sqrt( m2 + p.norm2() ); }; 
     }
-    std::cout << " total momenta to integrate over: " << momenta_to_integrate.size() << std::endl; 
+    if (mode & Setting::kVerbose) std::cout << " total momenta to integrate over: " << momenta_to_integrate.size() << std::endl; 
 
     //try to perform monte-carlo integration of variables    
     long double amp_sum  = 0.; 
@@ -116,6 +117,10 @@ template<int D> long double CrossSectionIntegrator(
     long long int step_n_accepted=0.; 
     long double step_amp_sum=0.;  
     long double step_amp2_sum=0.; 
+
+    long double steps_amp_average=0.; 
+    long double steps_amp2_average=0.; 
+    int i_reported=0; 
 
     for (long long int step=-n_thermalization_steps; step<n_steps; step++) {
 
@@ -179,38 +184,51 @@ template<int D> long double CrossSectionIntegrator(
             //std::printf(" rejected\n"); 
         }
         
-        if (++i_report >= steps_between_reports) {
+
+        if ((mode & Setting::kVerbose) && ++i_report >= steps_between_reports) {
             
-            long double d_i_report = (long double)i_report; 
-            long double d_step     = (long double)step; 
+            if (step >= 0) ++i_reported; 
+
+            long double d_i_reported = (long double)i_reported;             
+            long double d_i_report   = (long double)i_report; 
+            long double d_step       = (long double)step; 
+
+            if (step >= 0) {
+                steps_amp_average  += step_amp_sum/d_i_report; 
+                steps_amp2_average += step_amp2_sum/d_i_report; 
+            }
 
             //compute the variance of the amplitude 
             long double step_rel_variance = (step_amp2_sum/d_i_report) - std::pow(step_amp_sum/d_i_report,2);
-            long double rel_variance      = (amp2_sum/d_step) - std::pow(amp_sum/d_step,2);
+            long double variance          = (steps_amp2_average/d_i_reported) - std::pow(steps_amp_average/d_i_reported,2);
 
             //get the relative variance
             step_rel_variance   = std::sqrt(step_rel_variance); 
-            rel_variance        = std::sqrt(rel_variance);
+            //variance            = std::sqrt(variance);
 
             //step acceptance prob. 
             long double step_accept_p = ((long double)step_n_accepted)/d_i_report; 
-        
+            
             printf(
                 "step %5lli/%5lli (%5.1f%%) ----------------------------------------------------\n"
                 "            total                           step\n"
-                "   amp_sum: %-10.4Le +/- %-8.2Le          %-10.4Le +/- %-8.2Le\n"
-                "acceptance: %-5.1Lf%%                       %-5.1Lf%%\n"   
+                "   amp_sum: %10.4Le +/- %-8.2Le             %10.4Le +/- %-8.2Le\n"
+                "acceptance: %5.1Lf%%                        %5.1Lf%%\n"   
                 "momenta: \n", 
                 step, n_steps, 100.*((double)step)/((double)n_steps),     
 
-                (long double)amp_sum/d_step,            rel_variance,         
+                (long double)amp_sum/d_step,            std::sqrt(variance),         
                 (long double)step_amp_sum/d_i_report,   step_rel_variance,
                 (long double)100.*n_accepted/d_step,    (long double)100.*step_n_accepted/d_i_report
             );
             for (int i=0; i<D; i++) {
                 std::cout << " " << i << " " << momenta[i] << std::endl; 
             }
+            
+            //number of times a report has been made
+            //number of steps since the last report 
             i_report=0; 
+            
             step_amp_sum=0;
             step_amp2_sum=0; 
             step_n_accepted=0; 
@@ -224,8 +242,10 @@ template<int D> long double CrossSectionIntegrator(
             }
 
         } else {
+        
             step_amp_sum  += amp; 
             step_amp2_sum += amp*amp; 
+        
         }
     
     }

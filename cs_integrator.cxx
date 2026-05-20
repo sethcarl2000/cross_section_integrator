@@ -17,21 +17,21 @@ int main(int argc, char* argv[])
 {
     std::cout << "attempting integration..." << std::endl; 
 
-    const double beam_E = 2200.;
+    const double beam_E = 2205.;
 
     FourVec P0{ std::sqrt(beam_E*beam_E + me*me), 0., 0., +beam_E }; 
 
     FourVec e_rest{ me, 0., 0., 0. }; 
 
-    FourVec P1 = Nudge( e_rest, 0,  2000.*std::sin(5.*deg), 2000.*std::cos(5.*deg)  );
-    FourVec Pp = Nudge( e_rest, 0., +100*std::sin(15*deg),    100*std::cos(15*deg)    );
-    FourVec Pm = Nudge( e_rest, 0., -100*std::sin(15*deg),    100*std::cos(15*deg)    );
+    FourVec P1 = Nudge( e_rest, 0,      2.5*std::sin(5.*deg),    2.5*std::cos(5.*deg) );
+    FourVec Pp = Nudge( e_rest, 0.,  +1100.*std::sin(5.*deg),   1100*std::cos(5.*deg) );
+    FourVec Pm = Nudge( e_rest, 0.,  -1100.*std::sin(5.*deg),   1100*std::cos(5.*deg) );
 
     std::array<FourVecParameters,4> inputs_trident = {
-        FourVecParameters{ .is_fixed=true,   .val=P0, .momenta_scan_amplitude=0., .mass=me },
-        FourVecParameters{ .is_fixed=true,   .val=P1, .momenta_scan_amplitude=0., .mass=me },
-        FourVecParameters{ .is_fixed=false,  .val=Pp, .momenta_scan_amplitude=1e-2, .mass=me },
-        FourVecParameters{ .is_fixed=false,  .val=Pm, .momenta_scan_amplitude=1e-2, .mass=me }
+        FourVecParameters{ .is_fixed=true,  .val=P0, .momenta_scan_amplitude=0., .mass=me },
+        FourVecParameters{ .is_fixed=false, .val=P1, .momenta_scan_amplitude=1., .mass=me },
+        FourVecParameters{ .is_fixed=false, .val=Pp, .momenta_scan_amplitude=1., .mass=me },
+        FourVecParameters{ .is_fixed=true,  .val=Pm, .momenta_scan_amplitude=1., .mass=me }
         //,
     //    FourVecParameters{ .is_fixed=false, .val=P0, .momenta_scan_amplitude=1., .mass=me }
     };
@@ -39,9 +39,9 @@ int main(int argc, char* argv[])
     long double amp = CrossSectionIntegrator<D>(
         processes::trident, 
         inputs_trident, 
-        10e6, 
-        1e5, 
-        Setting::kConserveEnergy | Setting::kAutoAdjustScan, 
+        10e7, 
+        1e6, 
+        Setting::kConserveEnergy | Setting::kAutoAdjustScan | Setting::kVerbose, 
         2.5e6
     ); 
 
