@@ -8,9 +8,8 @@
 
 namespace processes 
 {
-    //invalid for i<2!; 
-    inline long double Power(double x, int i) { do { x *= x; } while (--i > 1); return x; }
-    
+    template<int D> using M2_fcn = std::function<long double(const std::array<FourVec,D>&)>; 
+
     /// @brief trident process e-(P0)   -->   e-(P1)  e-(Pm)   e+(Pp)
     /// @param P[0] P0 incoming beam electron 
     /// @param P[1] P1 outgoing beam electron 
