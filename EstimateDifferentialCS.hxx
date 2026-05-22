@@ -419,7 +419,8 @@ template<int D> double EstimateDifferentialCS(
 
     gsl_rng_free(rng);
     
-    printf("done with integration. result: %.5e +/- %.5e\n", result, error);
+    if (setting & Setting::kVerbose)
+        printf("done with integration. result: %.5e +/- %.5e\n", result, error);
 
     return result; 
 } 
