@@ -1,0 +1,17 @@
+const double energy_min = +1.00000000e+03;
+
+const double energy_max = +2.19000000e+03;
+
+const double cos_theta_min = +9.93132164e-01;
+
+const double cos_theta_max = +9.98634419e-01;
+
+const int npts_energy = 2;
+
+const int npts_cos_theta = 2;
+
+const std::vector<std::vector<double>> cs_array = {
+    { +1.14696792e-16, +8.89961357e-14, },
+    { +3.61390295e-16, +1.43577359e-15, }
+};
+
