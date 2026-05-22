@@ -1,6 +1,7 @@
-#ifndef CrossSectionIntegrator_H
-#define CrossSectionIntegrator_H
+#ifndef CrossSectionIntegrator_HXX
+#define CrossSectionIntegrator_HXX
 
+//stdlib headers
 #include <cmath> 
 #include <stdio.h>
 #include <functional> 
@@ -8,7 +9,11 @@
 #include <array> 
 #include <iostream> 
 #include <limits> 
+
+//project headers
 #include "FourVec.hxx"
+#include "IntegSettings.hxx"
+#include "Bound.hxx"
 
 namespace CSInteg {
     
@@ -22,16 +27,6 @@ struct FourVecParameters {
     double momenta_scan_amplitude; //amplitude of the momentum to scan
     double mass; //mass of the particle (MeV/c^2)
 };
-
-namespace Setting {
-    enum Bit : int {
-        kNone = 0,
-        kConserveEnergy     = 1 << 0, //enforce external energy conservation for each update
-        kConserveMomenta    = 1 << 1, //enforce external momentum conservation for each update 
-        kAutoAdjustScan     = 1 << 2, //automatically adjust the scan rate to keep the acceptance prob around ~50% 
-        kVerbose            = 1 << 3  //if true, then report output
-    };
-}
 
 //integrates a square matrix element over external momenta
 template<int D> long double CrossSectionIntegrator(

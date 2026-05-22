@@ -15,12 +15,18 @@ struct FourVec {
     inline double operator*(const FourVec& rhs) const {
         return this->get(0)*rhs.get(0) - (this->get(1)*rhs.get(1) + this->get(2)*rhs.get(2) + this->get(3)*rhs.get(3)); 
     }
-
+    
+    inline double t() const { return P[0]; }
+    inline double x() const { return P[1]; }
+    inline double y() const { return P[2]; }
+    inline double z() const { return P[3]; }
+        
     //norm2
     inline double norm2() const { return (*this)*(*this); }
     inline double norm()  const { return std::sqrt(norm2()); }
 };  
- 
+
+
 inline FourVec Nudge(FourVec v, double x, double y, double z) {
     double m2 = v.norm2(); 
     v[1] += x; v[2] += y; v[3] += z; 

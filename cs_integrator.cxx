@@ -29,19 +29,31 @@ int main(int argc, char* argv[])
     P0.energy    = beam_E; 
     P0.mass2     = me*me; 
     
-    P1.cos_theta = 1.0;
+    P1.cos_theta = 0.95;
     P1.phi       = 0.; 
-    P1.energy    = beam_E/2.; 
+    P1.energy    = beam_E*0.95; 
     P1.mass2     = me*me; 
     
-    double amp = EstimateDifferentialCS<4>(
-        processes::trident,
-        P0, 
-        P1, 1, { me, me },
-        1e6 
-    );
+    int n_samples = 20;
 
-    std::printf("done. final amplitude: %e\n", amp); 
+    double amp{0.}, amp2{0.};
+    for (int i=0; i<n_samples; i++) {
+        
+        double amp_i = EstimateDifferentialCS<3>(
+            processes::bh_photoproduction,
+            P0, 
+            P1, 1, { 0. },
+            3.e7, 
+            Setting::kVerbose, Setting::kMISER
+        );
+
+        amp  += amp_i;
+        amp2 += amp_i*amp_i; 
+    }   
+    
+    double variance = amp2/((double)n_samples) - std::pow( amp/((double)n_samples), 2 );
+
+    std::printf("done. final amplitude: %.5e  +/-  %.4e\n", amp/((double)n_samples), std::sqrt(variance)); 
     
     return 0; 
 }

@@ -30,17 +30,25 @@ set(CMAKE_PLATFORM_INDEPENDENT_CODE ON)
 #---------------------------------------------------------
 #   Find ROOT (necessary)
 find_package(ROOT 6.20 REQUIRED COMPONENTS Core RIO Physics)
+find_package(GSL REQUIRED)
 
 #---------------------------------------------------------
 #   Define sources and headers
 set(sources 
     processes/trident.cxx
+    processes/bh_photoproduction.cxx
+    PolarFourVec.hxx
 )
 
 set(headers
+    IntegSettings.hxx
+    Bound.hxx
+    PolarFourVec.hxx
     FourVec.hxx
     processes.hxx 
+    ScanEnergyAngle.hxx
     CrossSectionIntegrator.hxx   
+    EstimateDifferentialCS.hxx
     argparse.hpp
 )
 
@@ -65,8 +73,8 @@ target_compile_options(cs_integrator PRIVATE -pthread)
 find_package(Threads REQUIRED)
 target_link_libraries(cs_integrator PUBLIC Threads::Threads)
 
-target_include_directories(cs_integrator PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${ROOT_INCLUDE_DIRS})
-target_link_libraries(cs_integrator PRIVATE ${ROOT_LIBRARIES})
+target_include_directories(cs_integrator PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${ROOT_INCLUDE_DIRS} ${GSL_INCLUDE_DIRS})
+target_link_libraries(cs_integrator PRIVATE ${ROOT_LIBRARIES} ${GSL_LIBRARIES})
 
 
 #---------------------------------------------------------

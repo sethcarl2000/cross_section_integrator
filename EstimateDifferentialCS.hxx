@@ -12,10 +12,13 @@
 #include <TH2D.h> 
 
 //gsl headers
+#include <stdlib.h>
+#include <gsl/gsl_math.h>
 #include <gsl/gsl_monte.h> 
 #include <gsl/gsl_monte_plain.h>
 #include <gsl/gsl_monte_miser.h>
 #include <gsl/gsl_monte_vegas.h>
+#include <gsl/gsl_rng.h>
 
 //stdlib headers
 #include <cmath> 
@@ -30,8 +33,16 @@
 #include <sstream> 
 #include <string> 
 #include <algorithm>
+#include <random> 
 
 namespace EDCS {
+    
+    double monte_f(double* X, size_t dim, void* fcn_wrapper_void)
+    {
+        const std::function<double(double*)>* fcn = (std::function<double(double*)>*)(fcn_wrapper_void);       
+        return (*fcn)(X);
+    }
+
     constexpr double pi = 3.1415926536; 
 
     //set the energy scale 
@@ -71,8 +82,9 @@ template<int D> double EstimateDifferentialCS(
     const int P1_ind,  
     const std::vector<double> spectator_mass,
     long int n_steps, 
-    const double target_mass = 183.8*EDCS::dalton, 
-    int setting = Setting::kVerbose
+    int setting = Setting::kVerbose, 
+    Setting::MCStrategy integration_strategy = Setting::kVEGAS,
+    const double target_mass = 183.8*EDCS::dalton
 )
 {
     using EDCS::pi, EDCS::kNaN; 
@@ -165,7 +177,7 @@ template<int D> double EstimateDifferentialCS(
     //this is the last spectator momentum's mass. this is the most we can reduce it's energy to! 
     const double last_spectator_mass = spectator_mass.back(); 
 
-    if (n_spectator_momenta > 1) {
+    if (n_spectator_momenta > 0) {
         specmom_ind.reserve(n_spectator_momenta);
         specmom_energy_bound.reserve(n_spectator_momenta);
         
@@ -203,8 +215,9 @@ template<int D> double EstimateDifferentialCS(
                     integ_vars_lo[3*i_spec + 2], integ_vars_hi[3*i_spec + 2] 
                 );
 #endif
-            } else {
+            } 
 #ifdef EDCS_DEBUG
+            else {
                 std::printf(
                     "Spectator momenta %i (momentum %i): ~~~~~~~~~~~~~~~~~~~\n"
                     "   cos(theta): [ %+5.3f, %+5.3f ]\n"
@@ -213,19 +226,20 @@ template<int D> double EstimateDifferentialCS(
                     integ_vars_lo[3*i_spec + 0], integ_vars_hi[3*i_spec + 0], 
                     integ_vars_lo[3*i_spec + 1], integ_vars_hi[3*i_spec + 1]
                 );
-#endif
             }
+#endif
+            
             i_spec++; 
         }
     }
 
 #ifdef EDCS_DEBUG
-    std::printf("total momenta: %i, spectator momenta: %i\n");
+    std::printf("total momenta: %i, spectator momenta: %i\n", D, n_spectator_momenta);
 #endif
 
     //now, we're ready to assemble the function that will be passed to the gsl function. 
     auto my_MC_integrand = [&specmom_energy_bound, &specmom_ind, &momenta, &M2_polar, P1_ind, P0, P1, n_spectator_momenta, E_beam, prefactor]
-        (double *X, size_t dim, void *params)
+        (double *X)
     {   
         std::array<PolarFourVec,D> P; P[0] = P0; 
 
@@ -291,17 +305,123 @@ template<int D> double EstimateDifferentialCS(
             100.*(E - P0.energy)/P0.energy
         );
 #endif
-        return prefactor * M2_polar(P); 
+        double M2 = M2_polar(P);
+        if (M2 < 0. || M2 != M2) return 0.; 
+        
+        return prefactor * M2; 
     };
 
+    std::function<double(double*)> my_MC_integrand_f{my_MC_integrand};
+
+    gsl_monte_function gsl_M2_func; 
+
+    gsl_M2_func.f      = EDCS::monte_f;    
+    gsl_M2_func.dim    = integral_DoF; 
+    gsl_M2_func.params = &my_MC_integrand_f; 
+    
+#ifdef EDCS_DEBUG 
+    std::cout << "setting up gsl rng environment...\n";
+#endif
+    const gsl_rng_type *type;
+    gsl_rng *rng;
+
+    gsl_rng_env_setup();
+     
+    type = gsl_rng_default;
+    rng = gsl_rng_alloc(type);
+
+    std::random_device rd; 
+    gsl_rng_set(rng, rd());
+
+    double result, error; 
+
+    switch (integration_strategy) {
+        
+        case Setting::kVEGAS : {
+            //initialize the state of the monte-carlo integrator
+            gsl_monte_vegas_state *vegas_state = gsl_monte_vegas_alloc(integral_DoF); 
+
+            gsl_monte_vegas_params vegas_params; 
+            gsl_monte_vegas_params_get(vegas_state, &vegas_params); 
+
+            vegas_params.alpha = 2.; 
+            vegas_params.iterations = 10; 
+            vegas_params.ostream = stdout; 
+            vegas_params.verbose = -1;     
+
+            gsl_monte_vegas_params_set(vegas_state, &vegas_params); 
+
+            //now, we're ready to do the integration. 
+            gsl_monte_vegas_integrate(
+                &gsl_M2_func, 
+                integ_vars_lo, integ_vars_hi, integral_DoF, 
+                (size_t)n_steps, 
+                rng, vegas_state, 
+                &result, &error 
+            );
+            //free memory 
+            gsl_monte_vegas_free(vegas_state);
+            break; 
+        }  
+
+        case Setting::kMISER : {
+            //initialize the state of the monte-carlo integrator
+            gsl_monte_miser_state *miser_state = gsl_monte_miser_alloc(integral_DoF); 
+
+            gsl_monte_miser_params miser_params; 
+            gsl_monte_miser_params_get(miser_state, &miser_params); 
+
+            miser_params.alpha = 2.; 
+            miser_params.min_calls = 16.*integral_DoF;
+            miser_params.min_calls_per_bisection = 16 * miser_params.min_calls; 
+            
+            gsl_monte_miser_params_set(miser_state, &miser_params); 
+
+            //now, we're ready to do the integration. 
+            gsl_monte_miser_integrate(
+                &gsl_M2_func, 
+                integ_vars_lo, integ_vars_hi, integral_DoF, 
+                (size_t)n_steps, 
+                rng, miser_state, 
+                &result, &error 
+            );
+            //free memory 
+            gsl_monte_miser_free(miser_state);
+            break; 
+        }
+
+        case Setting::kPLAIN : {
+            //initialize the state of the monte-carlo integrator
+            gsl_monte_plain_state *plain_state = gsl_monte_plain_alloc(integral_DoF); 
+
+            //now, we're ready to do the integration. 
+            gsl_monte_plain_integrate(
+                &gsl_M2_func, 
+                integ_vars_lo, integ_vars_hi, integral_DoF, 
+                (size_t)n_steps, 
+                rng, plain_state, 
+                &result, &error 
+            );
+            //free memory 
+            gsl_monte_plain_free(plain_state);
+            break; 
+        }
+
+        default : {
+            std::cerr << "unsupported integration techniuqe.\n" << std::endl; return kNaN; 
+        }
+    }
     
 
-    double x[integral_DoF] = {
-        0.99, pi/2., 500., 
-        0.98,-pi/2. 
-    };
+#ifdef EDCS_DEBUG 
+    std::cout << "monte-carlo integration starting...\n";
+#endif
 
-    return my_MC_integrand(x, integral_DoF, nullptr); 
+    gsl_rng_free(rng);
+    
+    printf("done with integration. result: %.5e +/- %.5e\n", result, error);
+
+    return result; 
 } 
 
 #endif

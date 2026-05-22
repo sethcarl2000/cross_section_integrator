@@ -1,10 +1,5 @@
 #include "../processes.hxx"
 
-namespace { 
-
-    inline long double Square(long double _x) { return _x*_x; }
-}
-
 namespace processes
 {
     

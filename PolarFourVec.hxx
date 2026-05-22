@@ -9,7 +9,7 @@
 //an alternative represetntation of FourVec; 
 struct PolarFourVec {
 
-    double cos_theta, phi, energy, mass2; 
+    double cos_theta{1.}, phi{0.}, mass2{0.511*0.511}, energy{0.511}; 
 
     PolarFourVec() {}; 
 
