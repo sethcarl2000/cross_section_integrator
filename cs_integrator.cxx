@@ -1,9 +1,12 @@
 #include "FourVec.hxx"
-#include "CrossSectionIntegrator.hxx"
+#include "PolarFourVec.hxx"
 #include "processes.hxx"
 #include "argparse.hpp"
 
 #include <iostream>
+
+//#define EDCS_DEBUG
+#include "EstimateDifferentialCS.hxx"
 
 namespace {
     constexpr int D = 4; 
@@ -19,33 +22,26 @@ int main(int argc, char* argv[])
 
     const double beam_E = 2205.;
 
-    FourVec P0{ std::sqrt(beam_E*beam_E + me*me), 0., 0., +beam_E }; 
+    PolarFourVec P0, P1;
+    
+    P0.cos_theta = 1.0;
+    P0.phi       = 0.; 
+    P0.energy    = beam_E; 
+    P0.mass2     = me*me; 
+    
+    P1.cos_theta = 1.0;
+    P1.phi       = 0.; 
+    P1.energy    = beam_E/2.; 
+    P1.mass2     = me*me; 
+    
+    double amp = EstimateDifferentialCS<4>(
+        processes::trident,
+        P0, 
+        P1, 1, { me, me },
+        1e6 
+    );
 
-    FourVec e_rest{ me, 0., 0., 0. }; 
-
-    FourVec P1 = Nudge( e_rest, 0,      2.5*std::sin(5.*deg),    2.5*std::cos(5.*deg) );
-    FourVec Pp = Nudge( e_rest, 0.,  +1100.*std::sin(5.*deg),   1100*std::cos(5.*deg) );
-    FourVec Pm = Nudge( e_rest, 0.,  -1100.*std::sin(5.*deg),   1100*std::cos(5.*deg) );
-
-    std::array<FourVecParameters,4> inputs_trident = {
-        FourVecParameters{ .is_fixed=true,  .val=P0, .momenta_scan_amplitude=0., .mass=me },
-        FourVecParameters{ .is_fixed=false, .val=P1, .momenta_scan_amplitude=1., .mass=me },
-        FourVecParameters{ .is_fixed=false, .val=Pp, .momenta_scan_amplitude=1., .mass=me },
-        FourVecParameters{ .is_fixed=true,  .val=Pm, .momenta_scan_amplitude=1., .mass=me }
-        //,
-    //    FourVecParameters{ .is_fixed=false, .val=P0, .momenta_scan_amplitude=1., .mass=me }
-    };
-
-    long double amp = CrossSectionIntegrator<D>(
-        processes::trident, 
-        inputs_trident, 
-        10e7, 
-        1e6, 
-        Setting::kConserveEnergy | Setting::kAutoAdjustScan | Setting::kVerbose, 
-        2.5e6
-    ); 
-
-    std::printf("done. final amplitude: %Lf\n", amp); 
+    std::printf("done. final amplitude: %e\n", amp); 
     
     return 0; 
 }

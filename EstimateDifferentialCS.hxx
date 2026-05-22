@@ -29,6 +29,7 @@
 #include <stdexcept> 
 #include <sstream> 
 #include <string> 
+#include <algorithm>
 
 namespace EDCS {
     constexpr double pi = 3.1415926536; 
@@ -67,8 +68,8 @@ template<int D> double EstimateDifferentialCS(
     const processes::M2_fcn<D>& fcn_M2_cartesian, 
     const PolarFourVec& P0, 
     const PolarFourVec& P1,
-    const std::vector<double> spectator_mass,
     const int P1_ind,  
+    const std::vector<double> spectator_mass,
     long int n_steps, 
     const double target_mass = 183.8*EDCS::dalton, 
     int setting = Setting::kVerbose
@@ -166,16 +167,18 @@ template<int D> double EstimateDifferentialCS(
 
     if (n_spectator_momenta > 1) {
         specmom_ind.reserve(n_spectator_momenta);
-        specmom_energy_bounds.reserve(n_spectator_momenta);
+        specmom_energy_bound.reserve(n_spectator_momenta);
         
         double max_energy = E_beam - E1; 
         int i_spec=0; 
-        for (int i=1; i<D; i++) { if (i!=P1_ind) max_energy += -spectator_mass[i_spec++] }
+        for (int i=1; i<D; i++) { if (i!=P1_ind) max_energy += -spectator_mass[i_spec++]; }
         
         i_spec=0; 
         for (int i=1; i<D; i++) {
 
             if (i==P1_ind) continue; 
+
+            specmom_ind.push_back(i);
             
             integ_vars_lo[3*i_spec + 0] = -1.;
             integ_vars_hi[3*i_spec + 0] = +1.;   
@@ -184,52 +187,121 @@ template<int D> double EstimateDifferentialCS(
             integ_vars_hi[3*i_spec + 1] = +pi;  
 
             double m = spectator_mass[i_spec]; 
-            
+
             if (i_spec < n_spectator_momenta-1) {
-                integ_vars_lo[3*i_spec + 1] = m;
-                integ_vars_hi[3*i_spec + 1] = m + max_energy;  
+                integ_vars_lo[3*i_spec + 2] = m;
+                integ_vars_hi[3*i_spec + 2] = m + max_energy;  
+#ifdef EDCS_DEBUG
+                std::printf(
+                    "Spectator momenta %i (momentum %i): ~~~~~~~~~~~~~~~~~~~\n"
+                    "   cos(theta): [ %+5.3f, %+5.3f ]\n"
+                    "   phi:        [ %+5.3f, %+5.3f ]\n"
+                    "   energy:     [ %+5.3f, %+5.3f ]\n",
+                    i_spec, i, 
+                    integ_vars_lo[3*i_spec + 0], integ_vars_hi[3*i_spec + 0], 
+                    integ_vars_lo[3*i_spec + 1], integ_vars_hi[3*i_spec + 1], 
+                    integ_vars_lo[3*i_spec + 2], integ_vars_hi[3*i_spec + 2] 
+                );
+#endif
+            } else {
+#ifdef EDCS_DEBUG
+                std::printf(
+                    "Spectator momenta %i (momentum %i): ~~~~~~~~~~~~~~~~~~~\n"
+                    "   cos(theta): [ %+5.3f, %+5.3f ]\n"
+                    "   phi:        [ %+5.3f, %+5.3f ]\n",
+                    i_spec, i, 
+                    integ_vars_lo[3*i_spec + 0], integ_vars_hi[3*i_spec + 0], 
+                    integ_vars_lo[3*i_spec + 1], integ_vars_hi[3*i_spec + 1]
+                );
+#endif
             }
             i_spec++; 
         }
     }
-    
+
+#ifdef EDCS_DEBUG
+    std::printf("total momenta: %i, spectator momenta: %i\n");
+#endif
+
     //now, we're ready to assemble the function that will be passed to the gsl function. 
     auto my_MC_integrand = [&specmom_energy_bound, &specmom_ind, &momenta, &M2_polar, P1_ind, P0, P1, n_spectator_momenta, E_beam, prefactor]
         (double *X, size_t dim, void *params)
-        {   
-            std::array<PolarFourVec,D> P; P[0] = P0; 
+    {   
+        std::array<PolarFourVec,D> P; P[0] = P0; 
 
-            double E_balance = P0.energy - P1.energy; 
-            
-            //we're going to 'unfold' the integrator's inputs into our momenta  
-            int i_spec = 0; 
-            for (int i=1; i<D; i++) {
+        double E_balance = P0.energy - P1.energy; 
+        
+        //we're going to 'unfold' the integrator's inputs into our momenta  
+        int i_spec = 0; 
+        for (int i=1; i<D; i++) {
 
-                if (i==P1_ind) {
-                    P[i] = P1;  
-                } else {
-                    auto& pi = P[i]; 
-                    pi.cos_theta    = X[3*i_spec + 0]; 
-                    pi.phi          = X[3*i_spec + 1];
-                    if (i_spec < n_spectator_momenta-1) {
-                        pi.energy   = X[3*i_spec + 2];
-                        E_balance  -= pi.energy; 
-                    } 
-                    ++i_spec;
-                }
+            if (i==P1_ind) {
+                P[i] = P1;  
+            } else {
+                auto& pi = P[i]; 
+                pi.cos_theta    = X[3*i_spec + 0]; 
+                pi.phi          = X[3*i_spec + 1];
+                if (i_spec < n_spectator_momenta-1) {
+                    pi.energy   = X[3*i_spec + 2];
+                    E_balance  -= pi.energy; 
+                } 
+                ++i_spec;
             }
+        }
 
-            //now, lets pick the energy of the final spec. momentum 
-            auto& p_pivot = P[specmom_ind.back()]; 
-            if (E_balance < std::sqrt( p_pivot.mass )) return 0.; 
+        //now, lets pick the energy of the final spec. momentum 
+        auto& p_pivot = P[specmom_ind.back()]; 
+        if (E_balance < std::sqrt( p_pivot.mass2 )) return 0.; 
+        
+        p_pivot.energy = E_balance; 
+
+#ifdef EDCS_DEBUG
+        std::printf(
+            "matrix element will be evaluated.. ~~~~~~~~~~~~~~~~~~~~\n"  
+        );
+        std::cout << "specmom indicies:"; 
+        for (int ind : specmom_ind) std::cout << " " << ind; 
+        std::cout << std::endl; 
+
+        double E = 0.; 
+        for (int i=0; i<D; i++) {
             
-            p_pivot.energy = E_balance; 
+            bool is_spectator = 
+                !(std::find(specmom_ind.begin(), specmom_ind.end(), i) == specmom_ind.end());
+            
+            const auto& p = P[i]; 
 
-            return prefactor * M2_polar(P); 
-        };
+            E += p.energy; 
 
+            std::printf(
+                "Momentum P[%1i] (%s) ----------------------\n"
+                "   cos(theta): %- 5.3f \n"
+                "   phi:        %- 5.3f \n"
+                "   energy:     %- 5.3f \n"
+                "   mass^2      %- 5.3f \n",
+                i, (is_spectator ? "spectator" : "fixed"),
+                p.cos_theta, 
+                p.phi, 
+                p.energy, 
+                p.mass2
+            );
+        }
+        std::printf(
+            "energy balance: %.3f%%\n", 
+            100.*(E - P0.energy)/P0.energy
+        );
+#endif
+        return prefactor * M2_polar(P); 
+    };
 
-    return prefactor * M2_polar(momenta); 
+    
+
+    double x[integral_DoF] = {
+        0.99, pi/2., 500., 
+        0.98,-pi/2. 
+    };
+
+    return my_MC_integrand(x, integral_DoF, nullptr); 
 } 
 
 #endif
