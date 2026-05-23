@@ -37,7 +37,8 @@ find_package(GSL REQUIRED)
 set(sources 
     processes/trident.cxx
     processes/bh_photoproduction.cxx
-    PolarFourVec.hxx
+    PolarFourVec.cxx
+    M2_expr.cxx
 )
 
 set(headers
@@ -46,9 +47,8 @@ set(headers
     PolarFourVec.hxx
     FourVec.hxx
     processes.hxx 
-    ScanEnergyAngle.hxx
-    CrossSectionIntegrator.hxx   
     EstimateDifferentialCS.hxx
+    some_numbers.hxx
     argparse.hpp
 )
 
