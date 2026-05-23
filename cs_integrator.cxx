@@ -9,11 +9,13 @@
 #include <string>
 #include <mutex> 
 #include <fstream>
+#include <stdexcept> 
 
 #include <TString.h> 
+#include <TError.h> 
 
 //#define EDCS_DEBUG
-#include "EstimateDifferentialCS.hxx"
+#include "DifferentialCSIntegrator.hxx"
 
 namespace {
     constexpr int D = 4; 
@@ -21,6 +23,12 @@ namespace {
     constexpr double deg = 3.1415926536 / 180.; 
 
     constexpr double me = 0.501;
+
+    enum EProcessName {
+        kTrident_electron =1,
+        kTrident_positron, 
+        kBH_photoproduction  
+    };
 }
 
 void output_c_array(
@@ -35,62 +43,73 @@ int main(int argc, char* argv[])
     argparse::ArgumentParser program("cs_integrator"); 
 
     //positional argument is the output file 
-    
-    std::string process; 
-    program.add_argument("process")
-        .required()
-        .help("specific cross section to integrate")
-        .choices("trident", "bh_photoproduction")
-        .store_into(process); 
-
     std::string path_output;
-    program.add_argument("path_output")
-        .required()
-        .help("Path to the output file destination")
-        .store_into(path_output);
-
-    //index of fixed output momentum 
-    int fixed_momentum_index; 
-    program.add_argument("-i", "--fixed-momentum-index")
-        .default_value(1)
-        .help("The index of the fixed output momentum to measure")
-        .scan<'i', int>()
-        .nargs(1);
         
-    //beam energy 
-    program.add_argument("--beam-energy")
-        .help("beam energy of incident electron")
-        .default_value(2200.)
-        .scan<'g', double>()
-        .nargs(1);
+    try {
+        program.add_argument("process")
+            .required()
+            .help("specific cross section to integrate")
+            .choices("trident_electron", "trident_positron", "bh_photoproduction");
+            
+        program.add_argument("path_output")
+            .required()
+            .help("Path to the output file destination")
+            .store_into(path_output);
+            
+        //beam energy 
+        program.add_argument("--beam-energy")
+            .help("beam energy of incident electron")
+            .scan<'g', double>()
+            .default_value(2200.)
+            .nargs(1);
 
-    //energy range
-    program.add_argument("-e", "--energy-range")
-        .help("energy range to scan for outgoing particle")
-        .nargs(2)
-        .scan<'g', double>()
-        .default_value(std::vector<double>{1000., 2200.});
+        //energy range
+        program.add_argument("-e", "--energy-range")
+            .help("energy range to scan for outgoing particle")
+            .scan<'g', double>()
+            .default_value(std::vector<double>{1000., 2200.})
+            .nargs(2);
+
+        //beam energy 
+        program.add_argument("-t", "--rel-error")
+            .help("relative error of calculated cross section")
+            .scan<'g', double>()
+            .default_value(1e-3)
+            .nargs(1);
+            
+        //number of scan points in energy
+        program.add_argument("--n-pts-energy")
+            .help("Number of scan-points in the energy range")
+            .scan<'i', int>() 
+            .default_value(25)
+            .nargs(1);
         
-    //number of scan points in energy
-    program.add_argument("--n-pts-energy")
-        .help("Number of scan-points in the energy range")
-        .nargs(1)
-        .scan<'i', int>() 
-        .default_value(25);
+        //maximum number of iterations to attempt 
+        program.add_argument("--max-iterations")
+            .help("Maximum number of integration steps to attempt")
+            .scan<'i', unsigned int>()
+            .default_value(30000000)
+            .nargs(1);
+            
+        //range to scan in cos(theta)
+        program.add_argument("--cos-theta-range")
+            .help("Range to scan in cos(theta)")
+            .nargs(2)
+            .scan<'g', double>() 
+            .default_value(std::vector<double>{1.-0.14, 1.-0.08});
+            
+        //number of points to scan in cos(theta)
+        program.add_argument("--n-pts-cos-theta")
+            .help("Number of scan points in the cosine-scan range")
+            .nargs(1)
+            .scan<'i', int>() 
+            .default_value(25);
+    
+    } catch (const std::exception& e) {
 
-    //range to scan in cos(theta)
-    program.add_argument("--cos-theta-range")
-        .help("Range to scan in cos(theta)")
-        .nargs(2)
-        .scan<'g', double>() 
-        .default_value(std::vector<double>{1.-0.14, 1.-0.08});
-
-    //number of points to scan in cos(theta)
-    program.add_argument("--n-pts-cos-theta")
-        .help("Number of scan points in the cosine-scan range")
-        .nargs(1)
-        .scan<'i', int>() 
-        .default_value(25);
+        Error(__func__, "Something went wrong trying to create args. what(): %s", e.what()); 
+        return 1; 
+    }
     
 
     try {
@@ -101,6 +120,24 @@ int main(int argc, char* argv[])
         std::cerr << program;
         return 1; 
     }
+
+    const std::map<std::string, EProcessName> process_map{
+        {"bh_photoproduction",  kBH_photoproduction},
+        {"trident_electron",    kTrident_electron},
+        {"trident_positron",    kTrident_positron}
+    };
+
+    auto process_it = process_map.find(program.get<std::string>("process")); 
+    if (process_it == process_map.end()) {
+        Error("cs_integrator", "Process %s is not a valid name", program.get<std::string>("process").c_str());
+        return 1; 
+    }
+    const auto process = process_it->second; 
+
+    //relative error to shoot for 
+    const double rel_error = program.get<double>("--rel-error"); 
+
+    const long int max_iterations = program.get<unsigned int>("--max-iterations"); 
 
     const double beam_E = program.get<double>("--beam-energy"); 
 
@@ -134,10 +171,7 @@ int main(int argc, char* argv[])
 
     std::mutex save_mutex; 
 
-    const size_t n_integration_steps = 3e7; 
-
-    //I found miser to be the most effective 
-    Setting::MCStrategy integration_strategy = Setting::kMISER; 
+    const size_t n_integration_steps = 3e8; 
 
     //scan over energy & cos(theta)
     double energy = energy_range.min; 
@@ -146,7 +180,7 @@ int main(int argc, char* argv[])
         double cos_theta = cos_theta_range.min; 
         for (int ic=0; ic<npts_cos_theta; ic++) {
 
-            threads.emplace_back([P0, energy, cos_theta, integration_strategy, n_integration_steps, ie,ic, &save_mutex, &results, &errors]{
+            threads.emplace_back([P0, energy, cos_theta, n_integration_steps, ie,ic, &save_mutex, &results, &errors, process, rel_error]{
 
                 PolarFourVec P1; 
                 P1.energy = energy; 
@@ -154,17 +188,54 @@ int main(int argc, char* argv[])
                 P1.phi = 0.;  
                 P1.mass2 = me*me; 
 
-                double amp = EstimateDifferentialCS<3>(
-                    processes::bh_photoproduction,
-                    P0, 
-                    P1, 1, { 0. },
-                    n_integration_steps, 
-                    Setting::kVerbose, Setting::kMISER
-                );
+                std::vector<double> spectator_masses{}; 
+
+                double amp = 1.; 
+
+                int P1_ind; 
+
+                DifferentialCSIntegrator* integrator; 
+                
+                switch (process) {
+
+                    //____________________________________________________________________________
+                    case kTrident_positron : {
+                        integrator = new DifferentialCSIntegrator(processes::Factory::trident()); 
+                        P1_ind = 3; 
+                        spectator_masses.push_back(me);
+                        spectator_masses.push_back(me);
+                        break; 
+                    }
+                    
+                    //____________________________________________________________________________
+                    case kTrident_electron : {
+                        integrator = new DifferentialCSIntegrator(processes::Factory::trident()); 
+                        P1_ind = 2; 
+                        spectator_masses.push_back(me);
+                        spectator_masses.push_back(me);
+                        break; 
+                    }
+                    
+                    //____________________________________________________________________________
+                    case kBH_photoproduction : {
+                        integrator = new DifferentialCSIntegrator(processes::Factory::bh_photoproduction());
+                        P1_ind = 1; 
+                        spectator_masses.push_back(0.);
+                        break; 
+                    }
+
+                    default : {
+                        Error(__func__, "Process is unsupported.\n");
+                        std::exit(1); 
+                    }
+                }
+                auto result = integrator->Integrate(P0, P1, P1_ind, spectator_masses);
 
                 save_mutex.lock(); 
-                results[ie][ic] = amp; 
+                results[ie][ic] = result.val; 
                 save_mutex.unlock(); 
+
+                delete integrator; 
             });
 
             cos_theta += dCos; 

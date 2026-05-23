@@ -51,7 +51,7 @@ IntegrationResult DifferentialCSIntegrator::Integrate(
     const PolarFourVec& P0, 
     const PolarFourVec& P1,
     int P1_ind,
-    const std::vector<double> spectator_mass
+    const std::vector<double>& spectator_mass
 ) 
 {
     const double kNaN = some_numbers::NaN<double>; 
@@ -62,12 +62,12 @@ IntegrationResult DifferentialCSIntegrator::Integrate(
 
     IntegrationResult result; 
     
-    const int D = fExpr.get_n_inputs() - 2; 
+    const int D = fExpr.get_n_inputs(); 
 
     if (2 + (int)spectator_mass.size() != D) {
         std::ostringstream oss; 
         oss << "in <DifferentialCDIntegrator::"<<__func__<<">: list of spectator masses provided ("<<spectator_mass.size()<<")"
-        " is incorrect size. must be D-2"; 
+        " is incorrect size. must be "<< D-2; 
         throw std::logic_error(oss.str()); 
         return (result | ResultStatus::kError); 
     }
@@ -112,9 +112,9 @@ IntegrationResult DifferentialCSIntegrator::Integrate(
     if (D==2) {
         momenta.push_back(P1);
         return IntegrationResult{ 
-            .val = prefactor * fExpr(momenta),
-            .error = 0., 
-            ResultStatus::kSuccess 
+            .val    = prefactor * fExpr(momenta),
+            .error  = 0., 
+            .flag   = ResultStatus::kSuccess 
         }; 
     }
     
@@ -217,7 +217,7 @@ IntegrationResult DifferentialCSIntegrator::Integrate(
         (double *X)
     {   
         std::vector<PolarFourVec> P; P.reserve(D);
-        P[0] = P0; 
+        P.push_back(P0); 
 
         double E_balance = P0.energy - P1.energy; 
         
@@ -318,8 +318,6 @@ IntegrationResult DifferentialCSIntegrator::Integrate(
     std::random_device rd; 
     gsl_rng_set(rng, rd());
 
-    double result{kNaN}, error{kNaN}; 
-
     switch (fStrategy) {
         
         //____________________________________________________________________________________________________________
@@ -411,6 +409,7 @@ IntegrationResult DifferentialCSIntegrator::Integrate(
 
             auto options = integ.Options(); 
             options.SetNCalls((unsigned int)fMaxCalls);
+            options.SetRelTolerance(fRelTolerance);
             integ.SetOptions(options);
 
             integ.SetRelTolerance(fRelTolerance);
@@ -447,7 +446,6 @@ IntegrationResult DifferentialCSIntegrator::Integrate(
     gsl_rng_free(rng);
 
     if (fOptions & Setting::kVerbose)
-        printf("done with integration. result: %.5e +/- %.5e\n", result, error);
-
+        printf("done with integration. result: %.5e +/- %.5e\n", result.val, result.error);
     return result; 
 }

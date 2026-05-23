@@ -4,7 +4,7 @@
 namespace processes
 {
     
-M2_expr trident()
+M2_expr Factory::trident()
 {   
     std::function<double(const std::vector<FourVec>&)> _fcn = [](const std::vector<FourVec>& P)
     {    

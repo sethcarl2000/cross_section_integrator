@@ -39,6 +39,7 @@ set(sources
     processes/bh_photoproduction.cxx
     PolarFourVec.cxx
     M2_expr.cxx
+    DifferentialCSIntegrator.cxx
 )
 
 set(headers
@@ -47,7 +48,8 @@ set(headers
     PolarFourVec.hxx
     FourVec.hxx
     processes.hxx 
-    EstimateDifferentialCS.hxx
+    DifferentialCSIntegrator.hxx
+    IntegrationResult.hxx
     some_numbers.hxx
     argparse.hpp
 )

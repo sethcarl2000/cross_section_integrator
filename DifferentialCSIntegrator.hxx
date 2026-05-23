@@ -6,10 +6,11 @@
 #include "IntegrationResult.hxx"
 
 class DifferentialCSIntegrator {
+private: 
 
     processes::M2_expr fExpr; 
 
-    long int fMaxCalls{3e7};    
+    long int fMaxCalls{30000000};    
 
     int fOptions{Setting::kVerbose}; 
 
@@ -17,7 +18,7 @@ class DifferentialCSIntegrator {
 
     Setting::MCStrategy fStrategy{Setting::kADAPTIVE}; 
 
-private: 
+public: 
 
     DifferentialCSIntegrator(const processes::M2_expr& _expr) : fExpr{_expr} {}; 
 
@@ -35,7 +36,7 @@ private:
         const PolarFourVec& P0, 
         const PolarFourVec& P1,
         int P1_ind,
-        const std::vector<double> spectator_mass
+        const std::vector<double>& spectator_mass
     );
 
 };

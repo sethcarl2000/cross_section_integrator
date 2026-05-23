@@ -4,9 +4,8 @@
 namespace processes 
 {
     
-M2_expr bh_photoproduction()
+M2_expr Factory::bh_photoproduction()
 {   
-    
     std::function<double(const std::vector<FourVec>&)> _fcn = [](const std::vector<FourVec>& P)
     { 
         using namespace some_numbers; 
