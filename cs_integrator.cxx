@@ -13,6 +13,7 @@
 
 #include <TString.h> 
 #include <TError.h> 
+#include <TStopwatch.h> 
 
 //#define EDCS_DEBUG
 #include "DifferentialCSIntegrator.hxx"
@@ -157,9 +158,6 @@ int main(int argc, char* argv[])
 
     std::cout << "attempting integration..." << std::endl; 
 
-    std::vector<std::thread> threads; 
-    threads.reserve(npts_cos_theta*npts_energy);
-
     PolarFourVec P0; 
     P0.energy = beam_E; 
     P0.cos_theta = 1.; 
@@ -173,6 +171,86 @@ int main(int argc, char* argv[])
 
     const size_t n_integration_steps = 3e8; 
 
+    struct phase_space_point_t { double energy,cos_theta; int ie,ic; };
+
+    //__________________________________________________________________________________________________________
+    auto perform_integration = [P0, n_integration_steps, &save_mutex, &results, &errors, process, rel_error]
+        (const phase_space_point_t pt)
+    {
+        PolarFourVec P1; 
+        P1.energy    = pt.energy; 
+        P1.cos_theta = pt.cos_theta;
+        P1.phi = 0.;  
+        P1.mass2 = me*me; 
+
+        std::vector<double> spectator_masses{}; 
+
+        double amp = 1.; 
+
+        int P1_ind; 
+
+        DifferentialCSIntegrator* integrator; 
+        
+        switch (process) {
+
+            //____________________________________________________________________________
+            case kTrident_positron : {
+                integrator = new DifferentialCSIntegrator(processes::Factory::trident()); 
+                P1_ind = 3; 
+                spectator_masses.push_back(me);
+                spectator_masses.push_back(me);
+                break; 
+            }
+            
+            //____________________________________________________________________________
+            case kTrident_electron : {
+                integrator = new DifferentialCSIntegrator(processes::Factory::trident()); 
+                P1_ind = 2; 
+                spectator_masses.push_back(me);
+                spectator_masses.push_back(me);
+                break; 
+            }
+            
+            //____________________________________________________________________________
+            case kBH_photoproduction : {
+                integrator = new DifferentialCSIntegrator(processes::Factory::bh_photoproduction());
+                P1_ind = 1; 
+                spectator_masses.push_back(0.);
+                break; 
+            }
+
+            default : {
+                Error(__func__, "Process is unsupported.\n");
+                std::exit(1); 
+            }
+        }
+        //inform that this integration has started 
+        save_mutex.lock(); 
+        printf("starting: energy: %6.1f cos(theta): %7.5f\n",
+            pt.energy, pt.cos_theta
+        ); std::cout << std::flush; 
+        save_mutex.unlock(); 
+
+        integrator->SetOptions(Setting::kNone);
+
+        TStopwatch timer; 
+        auto result = integrator->Integrate(P0, P1, P1_ind, spectator_masses);
+        auto elapsed = timer.RealTime(); 
+
+        //inform that this integration has ended 
+        save_mutex.lock(); 
+        results[pt.ie][pt.ic] = result.val; 
+        printf("> time: %8.3fs energy: %6.1f cos(theta): %7.5f  result: %.6e +/- %.3e\n",
+            elapsed, pt.energy, pt.cos_theta, result.val, result.error
+        ); std::cout << std::flush; 
+        save_mutex.unlock(); 
+
+        delete integrator; 
+    };
+    //__________________________________________________________________________________________________________
+
+    std::vector<phase_space_point_t> points; points.reserve(npts_energy*npts_cos_theta);
+
     //scan over energy & cos(theta)
     double energy = energy_range.min; 
     for (int ie=0; ie<npts_energy; ie++) {
@@ -180,67 +258,37 @@ int main(int argc, char* argv[])
         double cos_theta = cos_theta_range.min; 
         for (int ic=0; ic<npts_cos_theta; ic++) {
 
-            threads.emplace_back([P0, energy, cos_theta, n_integration_steps, ie,ic, &save_mutex, &results, &errors, process, rel_error]{
-
-                PolarFourVec P1; 
-                P1.energy = energy; 
-                P1.cos_theta = cos_theta;
-                P1.phi = 0.;  
-                P1.mass2 = me*me; 
-
-                std::vector<double> spectator_masses{}; 
-
-                double amp = 1.; 
-
-                int P1_ind; 
-
-                DifferentialCSIntegrator* integrator; 
-                
-                switch (process) {
-
-                    //____________________________________________________________________________
-                    case kTrident_positron : {
-                        integrator = new DifferentialCSIntegrator(processes::Factory::trident()); 
-                        P1_ind = 3; 
-                        spectator_masses.push_back(me);
-                        spectator_masses.push_back(me);
-                        break; 
-                    }
-                    
-                    //____________________________________________________________________________
-                    case kTrident_electron : {
-                        integrator = new DifferentialCSIntegrator(processes::Factory::trident()); 
-                        P1_ind = 2; 
-                        spectator_masses.push_back(me);
-                        spectator_masses.push_back(me);
-                        break; 
-                    }
-                    
-                    //____________________________________________________________________________
-                    case kBH_photoproduction : {
-                        integrator = new DifferentialCSIntegrator(processes::Factory::bh_photoproduction());
-                        P1_ind = 1; 
-                        spectator_masses.push_back(0.);
-                        break; 
-                    }
-
-                    default : {
-                        Error(__func__, "Process is unsupported.\n");
-                        std::exit(1); 
-                    }
-                }
-                auto result = integrator->Integrate(P0, P1, P1_ind, spectator_masses);
-
-                save_mutex.lock(); 
-                results[ie][ic] = result.val; 
-                save_mutex.unlock(); 
-
-                delete integrator; 
-            });
+            points.emplace_back(energy, cos_theta, ie, ic);
 
             cos_theta += dCos; 
         }
         energy += dE; 
+    }
+
+    //now launch our threads. 
+
+    size_t end=0; 
+    const size_t n_tasks = points.size(); 
+    const size_t n_threads = std::thread::hardware_concurrency(); 
+
+    std::vector<std::thread> threads; threads.reserve(n_threads);
+
+    //divide up the integrations evenly among each thread
+    for (size_t t=0; t<n_threads; t++) {
+        
+        size_t start = end; 
+        end += (n_tasks / n_threads) + (t < n_tasks % n_threads ? 1 : 0);
+
+        threads.emplace_back([t,n_threads, start, end, &perform_integration, &points, &save_mutex]
+        {
+            for (size_t ii=start; ii<end; ii++) {
+                save_mutex.lock();
+                std::printf("worker thread %2zi/%zi processing task %zi/%zi\n", t+1, n_threads, ii-start+1, end-start+1);
+                save_mutex.unlock(); 
+
+                perform_integration(points[ii]); 
+            }
+        });
     }
 
     for (auto& thread : threads) thread.join(); 
