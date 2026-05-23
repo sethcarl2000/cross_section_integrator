@@ -269,7 +269,7 @@ int main(int argc, char* argv[])
 
     size_t end=0; 
     const size_t n_tasks = points.size(); 
-    const size_t n_threads = std::thread::hardware_concurrency(); 
+    const size_t n_threads = std::min( (size_t)std::thread::hardware_concurrency(), n_tasks ); 
 
     std::vector<std::thread> threads; threads.reserve(n_threads);
 
