@@ -9,7 +9,11 @@
 #include "processes.hxx"
  
 //root headers
-#include <TH2D.h> 
+#include <Math/AdaptiveIntegratorMultiDim.h>
+#include <Math/AllIntegrationTypes.h>
+#include <Math/IntegratorMultiDim.h>
+#include <Math/IntegratorOptions.h>
+#include <Math/Functor.h>
 
 //gsl headers
 #include <stdlib.h>
@@ -84,6 +88,7 @@ template<int D> double EstimateDifferentialCS(
     long int n_steps, 
     int setting = Setting::kVerbose, 
     Setting::MCStrategy integration_strategy = Setting::kVEGAS,
+    double rel_tolerance=1.e-3,
     const double target_mass = 183.8*EDCS::dalton
 )
 {
@@ -313,7 +318,15 @@ template<int D> double EstimateDifferentialCS(
 
     std::function<double(double*)> my_MC_integrand_f{my_MC_integrand};
 
-    gsl_monte_function gsl_M2_func; 
+    //same function as above, but accepts const ptr of arguments
+    std::function<double(const double*)> my_MC_integrand_fconst = [&my_MC_integrand_f, integral_DoF](const double* X)
+    {
+        double xx[integral_DoF];
+        std::copy( X, X+integral_DoF, xx );
+        return my_MC_integrand_f(xx);
+    };
+
+    gsl_monte_function gsl_M2_func;
 
     gsl_M2_func.f      = EDCS::monte_f;    
     gsl_M2_func.dim    = integral_DoF; 
@@ -333,10 +346,11 @@ template<int D> double EstimateDifferentialCS(
     std::random_device rd; 
     gsl_rng_set(rng, rd());
 
-    double result, error; 
+    double result{kNaN}, error{kNaN}; 
 
     switch (integration_strategy) {
         
+        //____________________________________________________________________________________________________________
         case Setting::kVEGAS : {
             //initialize the state of the monte-carlo integrator
             gsl_monte_vegas_state *vegas_state = gsl_monte_vegas_alloc(integral_DoF); 
@@ -364,6 +378,7 @@ template<int D> double EstimateDifferentialCS(
             break; 
         }  
 
+        //____________________________________________________________________________________________________________
         case Setting::kMISER : {
             //initialize the state of the monte-carlo integrator
             gsl_monte_miser_state *miser_state = gsl_monte_miser_alloc(integral_DoF); 
@@ -390,6 +405,7 @@ template<int D> double EstimateDifferentialCS(
             break; 
         }
 
+        //____________________________________________________________________________________________________________
         case Setting::kPLAIN : {
             //initialize the state of the monte-carlo integrator
             gsl_monte_plain_state *plain_state = gsl_monte_plain_alloc(integral_DoF); 
@@ -407,6 +423,21 @@ template<int D> double EstimateDifferentialCS(
             break; 
         }
 
+        //____________________________________________________________________________________________________________
+        case Setting::kADAPTIVE : {
+
+            ROOT::Math::IntegratorMultiDim integ(ROOT::Math::IntegrationMultiDim::kADAPTIVE);
+
+            auto options = integ.Options(); 
+            options.SetNCalls((unsigned int)n_steps);
+            integ.SetOptions(options);
+
+            integ.SetRelTolerance(rel_tolerance);
+
+            result = integ.Integral(my_MC_integrand_fconst, integral_DoF, integ_vars_lo, integ_vars_hi);
+            break; 
+        }
+        
         default : {
             std::cerr << "unsupported integration techniuqe.\n" << std::endl; return kNaN; 
         }
