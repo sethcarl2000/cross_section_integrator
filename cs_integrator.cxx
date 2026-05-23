@@ -10,6 +10,7 @@
 #include <mutex> 
 #include <fstream>
 #include <stdexcept> 
+#include <cstdlib> 
 
 #include <TString.h> 
 #include <TError.h> 
@@ -35,7 +36,7 @@ namespace {
 void output_c_array(
     Bound<double> energy, Bound<double> cos_theta, 
     int npts_energy, int npts_cos_theta, 
-    std::vector<std::vector<double>>& data, std::string path
+    const std::vector<double>& data, std::string path
 ); 
 
 int main(int argc, char* argv[])
@@ -164,8 +165,8 @@ int main(int argc, char* argv[])
     P0.phi = 0.; 
     P0.mass2 = me*me; 
 
-    std::vector<std::vector<double>> results(npts_cos_theta, std::vector<double>(npts_energy, 0.));
-    std::vector<std::vector<double>> errors (npts_cos_theta, std::vector<double>(npts_energy, 0.));
+    std::vector<double> results(npts_cos_theta*npts_energy, 0.);
+    std::vector<double> errors (npts_cos_theta*npts_energy, 0.);
 
     std::mutex save_mutex; 
 
@@ -174,7 +175,7 @@ int main(int argc, char* argv[])
     struct phase_space_point_t { double energy,cos_theta; int ie,ic; };
 
     //__________________________________________________________________________________________________________
-    auto perform_integration = [P0, n_integration_steps, &save_mutex, &results, &errors, process, rel_error]
+    auto perform_integration = [P0, n_integration_steps, &save_mutex, &results, &errors, process, rel_error, npts_energy]
         (const phase_space_point_t pt)
     {
         PolarFourVec P1; 
@@ -239,7 +240,7 @@ int main(int argc, char* argv[])
 
         //inform that this integration has ended 
         save_mutex.lock(); 
-        results[pt.ie][pt.ic] = result.val; 
+        results[pt.ie*npts_energy + pt.ic] = result.val; 
         printf("> time: %8.3fs energy: %6.1f cos(theta): %7.5f  result: %.6e +/- %.3e\n",
             elapsed, pt.energy, pt.cos_theta, result.val, result.error
         ); std::cout << std::flush; 
@@ -269,8 +270,18 @@ int main(int argc, char* argv[])
 
     size_t end=0; 
     const size_t n_tasks = points.size(); 
-    const size_t n_threads = std::min( (size_t)std::thread::hardware_concurrency(), n_tasks ); 
 
+    const char* SLURM_CPUS_PER_TASK = std::getenv("SLURM_CPUS_PER_TASK");
+    size_t max_n_threads; 
+    if (!SLURM_CPUS_PER_TASK) {
+        max_n_threads = std::thread::hardware_concurrency(); 
+        printf("hardware concurrency: %zi\n", max_n_threads);
+    } else {
+        max_n_threads = (size_t)std::stoi( std::string{SLURM_CPUS_PER_TASK} );
+        printf("slurm cpus per task: %zi\n", max_n_threads);
+    }
+     
+    const size_t n_threads = std::min( max_n_threads, n_tasks ); 
     std::vector<std::thread> threads; threads.reserve(n_threads);
 
     //divide up the integrations evenly among each thread
@@ -283,7 +294,7 @@ int main(int argc, char* argv[])
         {
             for (size_t ii=start; ii<end; ii++) {
                 save_mutex.lock();
-                std::printf("worker thread %2zi/%zi processing task %zi/%zi\n", t+1, n_threads, ii-start+1, end-start+1);
+                std::printf("worker thread %2zi/%zi processing task %zi/%zi\n", t+1, n_threads, ii-start+1, end-start);
                 save_mutex.unlock(); 
 
                 perform_integration(points[ii]); 
@@ -293,52 +304,15 @@ int main(int argc, char* argv[])
 
     for (auto& thread : threads) thread.join(); 
 
-
     output_c_array(energy_range, cos_theta_range, npts_energy, npts_cos_theta, results, path_output);
 
-    /*PolarFourVec P0, P1;
-    
-    P0.cos_theta = 1.0;
-    P0.phi       = 0.; 
-    P0.energy    = beam_E; 
-    P0.mass2     = me*me; 
-    
-    //scan over theta & phi 
-
-
-    P1.cos_theta = 0.95;
-    P1.phi       = 0.; 
-    P1.energy    = beam_E*0.95; 
-    P1.mass2     = me*me; 
-    
-    int n_samples = 20;
-
-    double amp{0.}, amp2{0.};
-    for (int i=0; i<n_samples; i++) {
-        
-        double amp_i = EstimateDifferentialCS<3>(
-            processes::bh_photoproduction,
-            P0, 
-            P1, 1, { 0. },
-            3.e7, 
-            Setting::kVerbose, Setting::kMISER
-        );
-
-        amp  += amp_i;
-        amp2 += amp_i*amp_i; 
-    }   
-    
-    double variance = amp2/((double)n_samples) - std::pow( amp/((double)n_samples), 2 );*/ 
-
-    //std::printf("done. final amplitude: %.5e  +/-  %.4e\n", amp/((double)n_samples), std::sqrt(variance)); 
-    
     return 0; 
 }
 
 void output_c_array(
     Bound<double> energy, Bound<double> cos_theta, 
     int npts_energy, int npts_cos_theta, 
-    std::vector<std::vector<double>>& data, std::string path
+    const std::vector<double>& data, std::string path
 )
 {
     std::ofstream outfile(path, std::ios::out | std::ios::trunc);
@@ -357,19 +331,22 @@ void output_c_array(
     outfile << Form("const int npts_energy = %i;\n\n",npts_energy); 
     outfile << Form("const int npts_cos_theta = %i;\n\n",npts_cos_theta); 
 
-    outfile << Form("const std::vector<std::vector<double>> cs_array = {\n"); 
-
-    for (size_t i=0; i<data.size(); i++) {
-
-        outfile << "    { ";
+    outfile << "// row is energy, col is cos (theta). ends are inclusive of bounds.\n";
+    outfile << Form("const std::vector<double> cs_array{\n"); 
+    
+    for (size_t i=0; i<npts_energy; i++) {
         
-        const auto& row = data[i];
-        for (size_t j=0; j<row.size(); j++) {
+        outfile << "    ";
+        for (size_t j=0; j<npts_cos_theta; j++) {
 
-            outfile << Form("%+12.8e, ", row[j]); 
+            outfile << Form("%+12.8e", data[i*npts_energy + j]);
+            if (j < npts_cos_theta-1) {
+                outfile << ", ";
+            } else {
+                if (i < npts_energy-1) outfile << ", ";  
+            } 
         }
-        outfile << (i < data.size()-1 ? "},\n" : "}\n"); 
-
+        outfile << "\n";
     }
     outfile << "};\n\n"; 
     
