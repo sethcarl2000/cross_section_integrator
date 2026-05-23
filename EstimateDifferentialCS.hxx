@@ -70,6 +70,11 @@ namespace EDCS {
     };
 }; 
 
+class DifferentialCSIntegrator {
+
+
+}
+
 /// @brief Use GSL monte-carlo integrators to estimate the differential cross sections 
 /// @tparam D number of momenta in matrix element 
 /// @param M2_cartesian function representing square matrix element (taking momentum inputs in cartesian form)
