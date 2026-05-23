@@ -1,5 +1,5 @@
-#ifndef EstimateDifferentialCS_HXX
-#define EstimateDifferentialCS_HXX
+
+#include "DifferentialCSIntegrator.hxx"
 
 //project headers
 #include "FourVec.hxx"
@@ -39,74 +39,37 @@
 #include <algorithm>
 #include <random> 
 
-namespace EDCS {
-    
+namespace {
     double monte_f(double* X, size_t dim, void* fcn_wrapper_void)
     {
         const std::function<double(double*)>* fcn = (std::function<double(double*)>*)(fcn_wrapper_void);       
         return (*fcn)(X);
     }
-
-    constexpr double pi = 3.1415926536; 
-
-    //set the energy scale 
-    constexpr double MeV    = 1.; 
-    // atomic mass unit (in MeV)
-    constexpr double dalton = 931.5*MeV; 
-
-    constexpr double kNaN = std::numeric_limits<double>::quiet_NaN(); 
-
-    //this struct wraps a M2_cartiesian matrix element, and accepts args as polar four-vectors
-    template<int D> struct M2_polar_wrapper {
-
-        processes::M2_fcn<D> M2_cartesian; 
-
-        inline double operator()(const std::array<PolarFourVec,D>& v_polar) const {
-            std::array<FourVec,D> v_cartesian; 
-            int i=0; 
-            for (const auto& p_polar : v_polar) v_cartesian[i++] = static_cast<FourVec>(p_polar);
-            return (double)M2_cartesian(v_cartesian);
-        }
-    };
-}; 
-
-class DifferentialCSIntegrator {
-
-
 }
 
-/// @brief Use GSL monte-carlo integrators to estimate the differential cross sections 
-/// @tparam D number of momenta in matrix element 
-/// @param M2_cartesian function representing square matrix element (taking momentum inputs in cartesian form)
-/// @param P0 incoming momenta (single)
-/// @param P1 single outgoing momenta to fix 
-/// @param P1_ind index of outgoing momenta to fix  
-/// @param n_steps number of integration steps to attempt
-/// @param setting setting bit for integrator
-/// @return differential cross section:  dSigma / dE * dCos (cos, E)
-template<int D> double EstimateDifferentialCS(
-    const processes::M2_fcn<D>& fcn_M2_cartesian, 
+IntegrationResult DifferentialCSIntegrator::Integrate(
     const PolarFourVec& P0, 
     const PolarFourVec& P1,
-    const int P1_ind,  
-    const std::vector<double> spectator_mass,
-    long int n_steps, 
-    int setting = Setting::kVerbose, 
-    Setting::MCStrategy integration_strategy = Setting::kVEGAS,
-    double rel_tolerance=1.e-3,
-    const double target_mass = 183.8*EDCS::dalton
-)
+    int P1_ind,
+    const std::vector<double> spectator_mass
+) 
 {
-    using EDCS::pi, EDCS::kNaN; 
+    const double kNaN = some_numbers::NaN<double>; 
 
-    static_assert(D >= 2, "D must be at least 2."); 
+    using 
+        some_numbers::pi, 
+        some_numbers::twopi;
+
+    IntegrationResult result; 
     
+    const int D = fExpr.get_n_inputs() - 2; 
+
     if (2 + (int)spectator_mass.size() != D) {
         std::ostringstream oss; 
-        oss << "in <EstimateDifferentialCS<"<<D<<">>: list of spectator masses provided ("<<spectator_mass.size()<<")"
+        oss << "in <DifferentialCDIntegrator::"<<__func__<<">: list of spectator masses provided ("<<spectator_mass.size()<<")"
         " is incorrect size. must be D-2"; 
         throw std::logic_error(oss.str()); 
-        return kNaN; 
+        return (result | ResultStatus::kError); 
     }
 
     //first, we need to write a wrapper function for the M2_fcn, which accepts *polar* four-vectors. 
@@ -121,44 +84,46 @@ template<int D> double EstimateDifferentialCS(
 
     if (E1 > E_beam) {
         std::ostringstream oss; 
-        oss << "in <EstimateDifferentialCS<"<<D<<">>: energy of fixed outgoing particle (" << E1 << " MeV) "
+        oss << "in <DifferentialCDIntegrator::"<<__func__<<">: energy of fixed outgoing particle (" << E1 << " MeV) "
         " is greater than incoming particle energy (" << E_beam << " MeV)"; 
         throw std::logic_error(oss.str()); 
-        return kNaN; 
+        return (result | ResultStatus::kError); 
     }   
 
     if (P1_ind < 1) {
         std::ostringstream oss; 
-        oss << "in <EstimateDifferentialCS<"<<D<<">>: index of fixed outgoing momenta = "<<P1_ind<<", is invalid; must be >0 (it cannot be the incident momenta!)"; 
+        oss << "in <DifferentialCDIntegrator::"<<__func__<<">: index of fixed outgoing momenta = "<<P1_ind<<", is invalid; must be >0 (it cannot be the incident momenta!)"; 
         throw std::logic_error(oss.str()); 
-        return kNaN; 
+        return (result | ResultStatus::kError); 
     }
 
-
-    constexpr double twopi = 2.*pi; 
+    const double target_mass = some_numbers::mZ; 
 
     //these are the parts of the measure that are constants. 
     // to see where this and other formulas come from (in terms of the sqaure matrix element),
     // see Peskin  Ch 4., in particular eq. 4.79. 
     double prefactor = twopi*std::sqrt( E1*E1 - m2 )/( 4.*E_beam*target_mass * std::pow(twopi,3*D) * 2. ); 
 
-    std::array<PolarFourVec,D> momenta{ P0, P1 };
-
-    //wrap our matrix element (accepting cartesian inputs) so that it will accept polar-form momenta inputs
-    EDCS::M2_polar_wrapper<D> M2_polar{fcn_M2_cartesian};
-
+    
+    std::vector<PolarFourVec> momenta; momenta.reserve(D);
+    momenta.push_back(P0);
+        
     //in this case there are no momenta to integrate over. return the differential CS.  
     if (D==2) {
-        return prefactor * M2_polar(momenta); 
+        momenta.push_back(P1);
+        return IntegrationResult{ 
+            .val = prefactor * fExpr(momenta),
+            .error = 0., 
+            ResultStatus::kSuccess 
+        }; 
     }
     
     //this is a tricky piece. How many degrees of freedom are we integrating over? 
     //first, we have to check how many 'spectator' degrees of freedom we have. 
     const int n_spectator_momenta = D-2; 
-    if (setting & Setting::kVerbose) {
+    if (fOptions & Setting::kVerbose) {
         printf("n. spectator momenta: %i\n", n_spectator_momenta);
     }
-
 
     //this is because the integration (in polar-coords, about the z-axis) has 3 DoF for each spectator momenta, 
     // but we must take one away, because the *last* spectator momenta has it's energy determined by whatever we need
@@ -248,10 +213,11 @@ template<int D> double EstimateDifferentialCS(
 #endif
 
     //now, we're ready to assemble the function that will be passed to the gsl function. 
-    auto my_MC_integrand = [&specmom_energy_bound, &specmom_ind, &momenta, &M2_polar, P1_ind, P0, P1, n_spectator_momenta, E_beam, prefactor]
+    auto my_MC_integrand = [&specmom_energy_bound, &specmom_ind, &momenta, this, D, P1_ind, P0, P1, n_spectator_momenta, E_beam, prefactor]
         (double *X)
     {   
-        std::array<PolarFourVec,D> P; P[0] = P0; 
+        std::vector<PolarFourVec> P; P.reserve(D);
+        P[0] = P0; 
 
         double E_balance = P0.energy - P1.energy; 
         
@@ -260,15 +226,16 @@ template<int D> double EstimateDifferentialCS(
         for (int i=1; i<D; i++) {
 
             if (i==P1_ind) {
-                P[i] = P1;  
+                P.push_back(P1);   
             } else {
-                auto& pi = P[i]; 
+                PolarFourVec pi; 
                 pi.cos_theta    = X[3*i_spec + 0]; 
                 pi.phi          = X[3*i_spec + 1];
                 if (i_spec < n_spectator_momenta-1) {
                     pi.energy   = X[3*i_spec + 2];
                     E_balance  -= pi.energy; 
                 } 
+                P.push_back(pi);
                 ++i_spec;
             }
         }
@@ -315,7 +282,7 @@ template<int D> double EstimateDifferentialCS(
             100.*(E - P0.energy)/P0.energy
         );
 #endif
-        double M2 = M2_polar(P);
+        double M2 = fExpr(P);
         if (M2 < 0. || M2 != M2) return 0.; 
         
         return prefactor * M2; 
@@ -333,7 +300,7 @@ template<int D> double EstimateDifferentialCS(
 
     gsl_monte_function gsl_M2_func;
 
-    gsl_M2_func.f      = EDCS::monte_f;    
+    gsl_M2_func.f      = monte_f;    
     gsl_M2_func.dim    = integral_DoF; 
     gsl_M2_func.params = &my_MC_integrand_f; 
     
@@ -353,7 +320,7 @@ template<int D> double EstimateDifferentialCS(
 
     double result{kNaN}, error{kNaN}; 
 
-    switch (integration_strategy) {
+    switch (fStrategy) {
         
         //____________________________________________________________________________________________________________
         case Setting::kVEGAS : {
@@ -374,10 +341,13 @@ template<int D> double EstimateDifferentialCS(
             gsl_monte_vegas_integrate(
                 &gsl_M2_func, 
                 integ_vars_lo, integ_vars_hi, integral_DoF, 
-                (size_t)n_steps, 
+                (size_t)fMaxCalls, 
                 rng, vegas_state, 
-                &result, &error 
+                &result.val, &result.error
             );
+
+            result = result | ResultStatus::kSuccess; 
+
             //free memory 
             gsl_monte_vegas_free(vegas_state);
             break; 
@@ -401,10 +371,13 @@ template<int D> double EstimateDifferentialCS(
             gsl_monte_miser_integrate(
                 &gsl_M2_func, 
                 integ_vars_lo, integ_vars_hi, integral_DoF, 
-                (size_t)n_steps, 
+                (size_t)fMaxCalls, 
                 rng, miser_state, 
-                &result, &error 
+                &result.val, &result.error 
             );
+
+            result = result | ResultStatus::kSuccess; 
+
             //free memory 
             gsl_monte_miser_free(miser_state);
             break; 
@@ -419,10 +392,13 @@ template<int D> double EstimateDifferentialCS(
             gsl_monte_plain_integrate(
                 &gsl_M2_func, 
                 integ_vars_lo, integ_vars_hi, integral_DoF, 
-                (size_t)n_steps, 
+                (size_t)fMaxCalls, 
                 rng, plain_state, 
-                &result, &error 
+                &result.val, &result.error 
             );
+
+            result = result | ResultStatus::kSuccess; 
+
             //free memory 
             gsl_monte_plain_free(plain_state);
             break; 
@@ -434,17 +410,32 @@ template<int D> double EstimateDifferentialCS(
             ROOT::Math::IntegratorMultiDim integ(ROOT::Math::IntegrationMultiDim::kADAPTIVE);
 
             auto options = integ.Options(); 
-            options.SetNCalls((unsigned int)n_steps);
+            options.SetNCalls((unsigned int)fMaxCalls);
             integ.SetOptions(options);
 
-            integ.SetRelTolerance(rel_tolerance);
+            integ.SetRelTolerance(fRelTolerance);
 
-            result = integ.Integral(my_MC_integrand_fconst, integral_DoF, integ_vars_lo, integ_vars_hi);
+            result.val = integ.Integral(my_MC_integrand_fconst, integral_DoF, integ_vars_lo, integ_vars_hi);
+            result.error = integ.Error(); 
+            
+            //check the integrator status
+            int status = integ.Status(); 
+
+            switch (status) {
+                case 0  : result.flag = ResultStatus::kSuccess; break; 
+                case 1  : result.flag = ResultStatus::kToleranceNotAchieved | ResultStatus::kError; break; 
+                default : result.flag = ResultStatus::kError; 
+            }
+
+            if ((fOptions & Setting::kVerbose) && (result.flag & ResultStatus::kToleranceNotAchieved)) {
+                std::printf("Desired rel. tolerance not achieved within max_calls = %li\n", fMaxCalls); 
+            }
+            
             break; 
         }
         
         default : {
-            std::cerr << "unsupported integration techniuqe.\n" << std::endl; return kNaN; 
+            std::cerr << "unsupported integration techniuqe.\n" << std::endl; return (result | ResultStatus::kError); 
         }
     }
     
@@ -454,11 +445,9 @@ template<int D> double EstimateDifferentialCS(
 #endif
 
     gsl_rng_free(rng);
-    
-    if (setting & Setting::kVerbose)
+
+    if (fOptions & Setting::kVerbose)
         printf("done with integration. result: %.5e +/- %.5e\n", result, error);
 
     return result; 
-} 
-
-#endif
+}
