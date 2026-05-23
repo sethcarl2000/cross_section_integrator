@@ -14,7 +14,8 @@ namespace Setting {
     enum MCStrategy : int {
         kPLAIN = 1 << 4,  
         kMISER = 1 << 5, 
-        kVEGAS = 1 << 6
+        kVEGAS = 1 << 6, 
+        kADAPTIVE = 1 << 7
     };
     //ZZZZZZZZZZZZZZZ
     //lkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk,566666666666666666666 bnnnnnnnnnnnnnnnnn
