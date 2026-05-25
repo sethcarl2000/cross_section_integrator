@@ -29,7 +29,8 @@ namespace {
     enum EProcessName {
         kTrident_electron =1,
         kTrident_positron, 
-        kBH_photoproduction  
+        kBH_photoproduction, 
+        kElastic
     };
 }
 
@@ -51,7 +52,7 @@ int main(int argc, char* argv[])
         program.add_argument("process")
             .required()
             .help("specific cross section to integrate")
-            .choices("trident_electron", "trident_positron", "bh_photoproduction");
+            .choices("trident_electron", "trident_positron", "bh_photoproduction", "elastic");
             
         program.add_argument("path_output")
             .required()
@@ -126,7 +127,8 @@ int main(int argc, char* argv[])
     const std::map<std::string, EProcessName> process_map{
         {"bh_photoproduction",  kBH_photoproduction},
         {"trident_electron",    kTrident_electron},
-        {"trident_positron",    kTrident_positron}
+        {"trident_positron",    kTrident_positron}, 
+        {"elastic",             kElastic}
     };
 
     auto process_it = process_map.find(program.get<std::string>("process")); 
@@ -217,6 +219,13 @@ int main(int argc, char* argv[])
                 integrator = new DifferentialCSIntegrator(processes::Factory::bh_photoproduction());
                 P1_ind = 1; 
                 spectator_masses.push_back(0.);
+                break; 
+            }
+
+            //____________________________________________________________________________
+            case kElastic : {
+                integrator = new DifferentialCSIntegrator(processes::Factory::elastic());
+                P1_ind = 1; 
                 break; 
             }
 

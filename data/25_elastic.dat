@@ -1,0 +1,17 @@
+const double energy_min = +2.20000000e+03;
+
+const double energy_max = +2.20000000e+03;
+
+const double cos_theta_min = +9.93132164e-01;
+
+const double cos_theta_max = +9.98634419e-01;
+
+const int npts_energy = 1;
+
+const int npts_cos_theta = 25;
+
+// row is energy, col is cos (theta). ends are inclusive of bounds.
+const std::vector<double> cs_array{
+    +1.29931451e-08, +1.39044790e-08, +1.49152893e-08, +1.60406033e-08, +1.72983971e-08, +1.87103188e-08, +2.03026265e-08, +2.21074184e-08, +2.41642642e-08, +2.65223937e-08, +2.92436711e-08, +3.24066964e-08, +3.61125472e-08, +4.04929590e-08, +4.57221999e-08, +5.20346818e-08, +5.97517037e-08, +6.93231734e-08, +8.13947188e-08, +9.69195181e-08, +1.17352449e-07, +1.45003867e-07, +1.83722735e-07, +2.40312519e-07, +3.27738032e-07
+};
+

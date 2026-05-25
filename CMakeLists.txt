@@ -37,9 +37,11 @@ find_package(GSL REQUIRED)
 set(sources 
     processes/trident.cxx
     processes/bh_photoproduction.cxx
+    processes/elastic.cxx
     PolarFourVec.cxx
     M2_expr.cxx
     DifferentialCSIntegrator.cxx
+
 )
 
 set(headers
