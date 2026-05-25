@@ -1,0 +1,27 @@
+#!/bin/bash 
+
+#SBATCH --nodes 1
+#SBATCH --partition standard
+#SBATCH --account phys5640_chern
+#SBATCH --ntasks 1
+#SBATCH --cpus-per-task=20
+#SBATCH --mem=4G
+#SBATCH --time 720
+#SBATCH --output=/home/ckx5qj/repos/cross_section_integrator/slurm/logs/%x.%A.out
+#SBATCH --error=/home/ckx5qj/repos/cross_section_integrator/slurm/logs/%x.%A.err
+
+# set up shell env, and activate conda environment
+source /home/ckx5qj/.bashrc
+
+conda activate phys56xx
+
+cd /home/ckx5qj/repos/cross_section_integrator
+
+process=${1}
+output_file=${2}
+
+cmd="./cs_integrator --beam-energy 2200. --energy-range 1000. 2190. --rel-error 1e-3 --n-pts-energy 25 --cos-theta-range 0.993132164 0.998634419 --n-pts-cos-theta 25 --max-iterations 100000000 ${process} ${output_file}"
+
+echo "cmd: '$cmd'" 
+
+time eval $cmd
