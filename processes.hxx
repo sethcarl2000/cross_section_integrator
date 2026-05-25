@@ -55,6 +55,13 @@ namespace processes
         /// @param P[2] K  outgoing photon momentum 
         /// @return Square amplitude (including averging over spin-sums)
         static M2_expr bh_photoproduction();
+
+        /// @brief photoproduction from elastic (rutherford) scattering: e-(P0)   -->   e-(P1)
+        /// @param P[0] P0 incoming electron momentum
+        /// @param P[1] P1 outgoing electron momentum 
+        /// @return Square amplitude (including averging over spin-sums)
+        static M2_expr elastic();
+
     };
 };
 
