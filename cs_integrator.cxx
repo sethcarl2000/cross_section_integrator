@@ -259,7 +259,7 @@ int main(int argc, char* argv[])
         //inform that this integration has ended 
         save_mutex.lock(); 
         results[pt.ie*npts_cos_theta + pt.ic] = result.val; 
-        printf("> time: %8.3fs energy: %6.1f cos(theta): %7.5f  result: %.6e +/- %.3e   calls: %.4e",
+        printf("> time: %8.3fs energy: %6.1f cos(theta): %7.5f  result: %.6e +/- %.3e  calls: %.4e",
             elapsed, pt.energy, pt.cos_theta, result.val, result.error, (double)result.n_calls
         ); 
         if (result.flag & ResultStatus::kToleranceNotAchieved) { std::cout << "(desired rel. tolerance not achieved)"; }
