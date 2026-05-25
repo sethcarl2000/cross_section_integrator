@@ -177,7 +177,7 @@ int main(int argc, char* argv[])
     struct phase_space_point_t { double energy,cos_theta; int ie,ic; };
 
     //__________________________________________________________________________________________________________
-    auto perform_integration = [P0, n_integration_steps, &save_mutex, &results, &errors, process, rel_error, npts_energy]
+    auto perform_integration = [P0, n_integration_steps, &save_mutex, &results, &errors, process, rel_error, npts_cos_theta]
         (const phase_space_point_t pt)
     {
         PolarFourVec P1; 
@@ -249,7 +249,7 @@ int main(int argc, char* argv[])
 
         //inform that this integration has ended 
         save_mutex.lock(); 
-        results[pt.ie*npts_energy + pt.ic] = result.val; 
+        results[pt.ie*npts_cos_theta + pt.ic] = result.val; 
         printf("> time: %8.3fs energy: %6.1f cos(theta): %7.5f  result: %.6e +/- %.3e\n",
             elapsed, pt.energy, pt.cos_theta, result.val, result.error
         ); std::cout << std::flush; 
@@ -262,17 +262,19 @@ int main(int argc, char* argv[])
     std::vector<phase_space_point_t> points; points.reserve(npts_energy*npts_cos_theta);
 
     //scan over energy & cos(theta)
-    double energy = energy_range.min; 
     for (int ie=0; ie<npts_energy; ie++) {
-
-        double cos_theta = cos_theta_range.min; 
         for (int ic=0; ic<npts_cos_theta; ic++) {
 
-            points.emplace_back(energy, cos_theta, ie, ic);
+            double energy    = energy_range.min    + ((double)ie)*dE;
+            double cos_theta = cos_theta_range.min + ((double)ic)*dCos;     
 
-            cos_theta += dCos; 
+            points.push_back({
+                .energy=energy, 
+                .cos_theta=cos_theta, 
+                .ie=ie, 
+                .ic=ic
+            });
         }
-        energy += dE; 
     }
 
     //now launch our threads. 
@@ -348,7 +350,7 @@ void output_c_array(
         outfile << "    ";
         for (size_t j=0; j<npts_cos_theta; j++) {
 
-            outfile << Form("%+12.8e", data[i*npts_energy + j]);
+            outfile << Form("%+12.8e", data[i*npts_cos_theta + j]);
             if (j < npts_cos_theta-1) {
                 outfile << ", ";
             } else {
