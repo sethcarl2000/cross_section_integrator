@@ -14,6 +14,7 @@
 #include <Math/IntegratorMultiDim.h>
 #include <Math/IntegratorOptions.h>
 #include <Math/Functor.h>
+#include <Math/IFunction.h>
 
 //gsl headers
 #include <stdlib.h>
@@ -40,6 +41,27 @@
 #include <random> 
 
 namespace {
+
+    //______________________________________________________________________________________________________
+    //this class wraps a matrix element function with an IMultiGenFunction
+    class M2_Function : public ROOT::Math::IBaseFunctionMultiDim {
+    private:
+        int fN_inputs; 
+    
+        const std::function<double(const double*)> *fExpr; 
+
+        double DoEval(const double* X) const override { return (*fExpr)(X); }; 
+
+    public: 
+        M2_Function(const std::function<double(const double*)>* _expr=nullptr, int n_inputs=0) : fN_inputs{n_inputs}, fExpr{_expr} {};
+        ~M2_Function() {}; 
+
+        unsigned int NDim() const override { return fN_inputs; }
+
+        ROOT::Math::IBaseFunctionMultiDim* Clone() const override { return new M2_Function(fExpr, fN_inputs); }
+    };
+    //______________________________________________________________________________________________________
+
     double monte_f(double* X, size_t dim, void* fcn_wrapper_void)
     {
         const std::function<double(double*)>* fcn = (std::function<double(double*)>*)(fcn_wrapper_void);       
@@ -345,7 +367,7 @@ IntegrationResult DifferentialCSIntegrator::Integrate(
             );
 
             result = result | ResultStatus::kSuccess; 
-
+            result.n_calls = fMaxCalls; 
             //free memory 
             gsl_monte_vegas_free(vegas_state);
             break; 
@@ -374,6 +396,7 @@ IntegrationResult DifferentialCSIntegrator::Integrate(
                 &result.val, &result.error 
             );
 
+            result.n_calls = fMaxCalls; 
             result = result | ResultStatus::kSuccess; 
 
             //free memory 
@@ -395,6 +418,7 @@ IntegrationResult DifferentialCSIntegrator::Integrate(
                 &result.val, &result.error 
             );
 
+            result.n_calls = fMaxCalls; 
             result = result | ResultStatus::kSuccess; 
 
             //free memory 
@@ -405,16 +429,16 @@ IntegrationResult DifferentialCSIntegrator::Integrate(
         //____________________________________________________________________________________________________________
         case Setting::kADAPTIVE : {
 
-            ROOT::Math::IntegratorMultiDim integ(ROOT::Math::IntegrationMultiDim::kADAPTIVE);
+            M2_Function root_fcn(&my_MC_integrand_fconst, integral_DoF); 
 
-            auto options = integ.Options(); 
-            options.SetNCalls((unsigned int)fMaxCalls);
-            options.SetRelTolerance(fRelTolerance);
-            integ.SetOptions(options);
+            ROOT::Math::AdaptiveIntegratorMultiDim integ(root_fcn);//(ROOT::Math::IntegrationMultiDim::kADAPTIVE);
 
+            integ.SetMinPts(fMinCalls);
+            integ.SetMaxPts(fMaxCalls);
             integ.SetRelTolerance(fRelTolerance);
+            integ.SetSize(integral_DoF);
 
-            result.val = integ.Integral(my_MC_integrand_fconst, integral_DoF, integ_vars_lo, integ_vars_hi);
+            result.val = integ.Integral(integ_vars_lo, integ_vars_hi);
             result.error = integ.Error(); 
             
             //check the integrator status
@@ -430,6 +454,7 @@ IntegrationResult DifferentialCSIntegrator::Integrate(
                 std::printf("Desired rel. tolerance not achieved within max_calls = %li\n", fMaxCalls); 
             }
             
+            result.n_calls = integ.NEval(); 
             break; 
         }
         

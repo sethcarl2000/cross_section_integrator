@@ -4,6 +4,7 @@
 #include "processes.hxx"
 #include "IntegSettings.hxx"
 #include "IntegrationResult.hxx"
+#include <Math/IFunction.h> 
 
 class DifferentialCSIntegrator {
 private: 
@@ -11,6 +12,7 @@ private:
     processes::M2_expr fExpr; 
 
     long int fMaxCalls{30000000};    
+    long int fMinCalls{0};
 
     int fOptions{Setting::kVerbose}; 
 
@@ -25,6 +27,7 @@ public:
     void SetProcess(const processes::M2_expr& _expr) { fExpr = _expr; }
 
     void SetMaxCalls(long int n_steps) { fMaxCalls = n_steps; }
+    void SetMinCalls(long int n_steps) { fMinCalls = n_steps; }
 
     void SetIntegrationStrategy(Setting::MCStrategy strat) { fStrategy=strat; }
 

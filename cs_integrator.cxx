@@ -93,6 +93,13 @@ int main(int argc, char* argv[])
             .scan<'i', unsigned int>()
             .default_value(30000000)
             .nargs(1);
+
+        //minimum number of iterations to attempt 
+        program.add_argument("--min-iterations")
+            .help("Maximum number of integration steps to attempt")
+            .scan<'i', unsigned int>()
+            .default_value(0)
+            .nargs(1);
             
         //range to scan in cos(theta)
         program.add_argument("--cos-theta-range")
@@ -141,8 +148,6 @@ int main(int argc, char* argv[])
     //relative error to shoot for 
     const double rel_error = program.get<double>("--rel-error"); 
 
-    const long int max_iterations = program.get<unsigned int>("--max-iterations"); 
-
     const double beam_E = program.get<double>("--beam-energy"); 
 
     auto e_rng_arg = program.get<std::vector<double>>("--energy-range"); 
@@ -172,12 +177,13 @@ int main(int argc, char* argv[])
 
     std::mutex save_mutex; 
 
-    const size_t n_integration_steps = 3e8; 
+    const size_t min_iterations = program.get<unsigned int>("--min-iterations"); 
+    const size_t max_iterations = program.get<unsigned int>("--max-iterations"); 
 
     struct phase_space_point_t { double energy,cos_theta; int ie,ic; };
 
     //__________________________________________________________________________________________________________
-    auto perform_integration = [P0, n_integration_steps, &save_mutex, &results, &errors, process, rel_error, npts_cos_theta]
+    auto perform_integration = [P0, min_iterations, max_iterations, &save_mutex, &results, &errors, process, rel_error, npts_cos_theta]
         (const phase_space_point_t pt)
     {
         PolarFourVec P1; 
@@ -241,6 +247,9 @@ int main(int argc, char* argv[])
         ); std::cout << std::flush; 
         save_mutex.unlock(); 
 
+        integrator->SetMinCalls(min_iterations);
+        integrator->SetMaxCalls(max_iterations);
+        
         integrator->SetOptions(Setting::kNone);
 
         TStopwatch timer; 
@@ -250,9 +259,11 @@ int main(int argc, char* argv[])
         //inform that this integration has ended 
         save_mutex.lock(); 
         results[pt.ie*npts_cos_theta + pt.ic] = result.val; 
-        printf("> time: %8.3fs energy: %6.1f cos(theta): %7.5f  result: %.6e +/- %.3e\n",
-            elapsed, pt.energy, pt.cos_theta, result.val, result.error
-        ); std::cout << std::flush; 
+        printf("> time: %8.3fs energy: %6.1f cos(theta): %7.5f  result: %.6e +/- %.3e   calls: %.4e",
+            elapsed, pt.energy, pt.cos_theta, result.val, result.error, (double)result.n_calls
+        ); 
+        if (result.flag & ResultStatus::kToleranceNotAchieved) { std::cout << "(desired rel. tolerance not achieved)"; }
+        std::cout << std::endl; 
         save_mutex.unlock(); 
 
         delete integrator; 

@@ -19,6 +19,9 @@ struct IntegrationResult {
     double val{some_numbers::NaN<double>}, error{some_numbers::NaN<double>}; 
     int flag{ResultStatus::kNull}; 
 
+    //number of calls performed in the numerical integration
+    unsigned int n_calls{0};
+
     //implicit conversion to double
     operator double() const { return val; }
 
