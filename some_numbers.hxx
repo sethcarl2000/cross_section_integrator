@@ -26,6 +26,9 @@ namespace some_numbers
 
     // nan
     template <typename T> T NaN = std::numeric_limits<T>::quiet_NaN();  
+
+    // positive infinity 
+    constexpr double kInfinity = std::numeric_limits<double>::infinity(); 
 };   
 
 #endif

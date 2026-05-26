@@ -39,6 +39,7 @@ set(sources
     processes/bh_photoproduction.cxx
     processes/elastic.cxx
     PolarFourVec.cxx
+    MetropolisIntegrator.cxx
     M2_expr.cxx
     DifferentialCSIntegrator.cxx
 
@@ -53,6 +54,7 @@ set(headers
     DifferentialCSIntegrator.hxx
     IntegrationResult.hxx
     some_numbers.hxx
+    MetropolisIntegrator.hxx
     argparse.hpp
 )
 
@@ -70,6 +72,7 @@ set(headers
 #   Add Libraries
 add_executable(cs_integrator cs_integrator.cxx ${sources} ${headers})
 target_include_directories(cs_integrator PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
+target_compile_options(cs_integrator PRIVATE -g)
 target_link_libraries(cs_integrator PUBLIC ROOT::Core Threads::Threads)
 target_compile_options(cs_integrator PRIVATE -pthread)
 

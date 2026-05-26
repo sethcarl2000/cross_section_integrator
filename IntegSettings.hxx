@@ -12,10 +12,11 @@ namespace Setting {
 
     //specifcy which algorithm to use from the GSL monte-carlo integration library
     enum MCStrategy : int {
-        kPLAIN = 1 << 4,  
-        kMISER = 1 << 5, 
-        kVEGAS = 1 << 6, 
-        kADAPTIVE = 1 << 7
+        kPLAIN      = 1 << 4,  
+        kMISER      = 1 << 5, 
+        kVEGAS      = 1 << 6, 
+        kADAPTIVE   = 1 << 7, 
+        kMETROPOLIS = 1 << 8
     };
     //ZZZZZZZZZZZZZZZ
     //lkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk,566666666666666666666 bnnnnnnnnnnnnnnnnn

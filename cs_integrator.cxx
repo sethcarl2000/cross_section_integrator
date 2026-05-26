@@ -90,15 +90,15 @@ int main(int argc, char* argv[])
         //maximum number of iterations to attempt 
         program.add_argument("--max-iterations")
             .help("Maximum number of integration steps to attempt")
-            .scan<'i', unsigned int>()
             .default_value(30000000)
+            .scan<'i', unsigned int>()
             .nargs(1);
 
         //minimum number of iterations to attempt 
         program.add_argument("--min-iterations")
             .help("Maximum number of integration steps to attempt")
-            .scan<'i', unsigned int>()
             .default_value(0)
+            .scan<'i', unsigned int>()
             .nargs(1);
             
         //range to scan in cos(theta)
@@ -161,8 +161,8 @@ int main(int argc, char* argv[])
     const int npts_cos_theta = program.get<int>("--n-pts-cos-theta"); 
 
     //scan rates for energy & cos theta 
-    const double dE   = (energy_range.max - energy_range.min)/((double)npts_energy-1);
-    const double dCos = (cos_theta_range.max - cos_theta_range.min)/((double)npts_cos_theta-1);
+    const double dE   = npts_energy>1 ? (energy_range.max - energy_range.min)/((double)npts_energy-1) : 0.;
+    const double dCos = npts_cos_theta>1 ? (cos_theta_range.max - cos_theta_range.min)/((double)npts_cos_theta-1) : 0.;
 
     std::cout << "attempting integration..." << std::endl; 
 
@@ -251,6 +251,8 @@ int main(int argc, char* argv[])
         integrator->SetMaxCalls(max_iterations);
         
         integrator->SetOptions(Setting::kNone);
+
+        integrator->SetIntegrationStrategy(Setting::kADAPTIVE);
 
         TStopwatch timer; 
         auto result = integrator->Integrate(P0, P1, P1_ind, spectator_masses);
